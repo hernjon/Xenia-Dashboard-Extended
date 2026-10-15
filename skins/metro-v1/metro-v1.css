@@ -1,0 +1,40 @@
+/* Metro (2011), dashboard 2.0.15574. Its screens (System Settings and the rest) are the Kinect dashboard's white list with
+   a green highlight beside a grey panel, so they come from the Kinect stylesheet; this file adds the pivot and the grid. */
+@import url('../kinect/kinect.css');
+body { background:#2b2d2f; font-family:'Segoe UI Light','Segoe UI','Selawik','Open Sans',Tahoma,system-ui,sans-serif; }
+
+.mt-root { position:fixed; inset:0; z-index:5; overflow:hidden; pointer-events:none; }
+.mt-background { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+
+/* The pivot: every section, lowercase, light; the open one white. */
+.mt-pivot { position:absolute; left:14.7vw; right:4vw; top:18.6vh; display:flex; gap:3vw; white-space:nowrap; overflow:hidden; }
+.mt-pivot-item { font-size:4.4vh; font-weight:300; color:#ffffff59; transition:color .2s ease; }
+.mt-pivot-item.open { color:#fff; }
+
+/* Tiles: placed by metro-v1-skin.js (translate, width, height). */
+.mt-grid { position:absolute; inset:0; }
+.mt-tile { position:absolute; left:0; top:0; overflow:hidden; color:#fff; background:#5a9e1e; transition:transform .3s cubic-bezier(.18,.74,.25,1),box-shadow .15s ease; }
+.mt-still .mt-tile,body.reduce-motion .mt-tile { transition:none; }
+.mt-tile.active { background:#6fb12f; box-shadow:0 0 0 .32vh #dbe9c9,0 .6vh 1.6vh #0006; z-index:2; }
+.mt-icon { position:absolute; left:50%; top:40%; height:34%; width:auto; max-width:60%; object-fit:contain; transform:translate(-50%,-50%); }
+.mt-label { position:absolute; left:6.5%; right:5%; bottom:6%; font-size:2.75vh; line-height:1.1; overflow-wrap:anywhere; }
+.mt-cover { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
+.mt-cover-tile { background:#1d1f21; }
+.mt-cover-tile.active { background:#1d1f21; box-shadow:0 0 0 .5vh #f2f7ea,0 .8vh 2vh #0008; }
+.mt-no-art .mt-label { left:0; right:0; bottom:0; padding:3vh 6% 1.2vh; font-size:2.2vh; background:linear-gradient(transparent,#000c); }
+
+/* Under the grid: the focused game's name (the tile itself only shows the cover). */
+.mt-caption { position:absolute; left:14.7vw; right:14.7vw; top:75.2vh; text-shadow:0 .1vh .4vh #0008; }
+.mt-caption-title { font-size:3.2vh; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mt-caption-text { font-size:2.3vh; color:#ffffffb3; margin-top:.4vh; }
+
+/* Button legend, bottom left. */
+.mt-legend { position:absolute; left:10.9vw; top:87.6vh; display:flex; gap:2.2vw; align-items:center; }
+.mt-key { display:flex; align-items:center; gap:.7vw; font-size:2.6vh; color:#fff; text-shadow:0 .1vh .3vh #0000008c; white-space:nowrap; }
+.mt-key img { width:4.6vh; height:4.6vh; margin:-.6vh -.3vw; }
+
+/* Screens: the grid, pivot and caption step aside; the background stays. */
+.modal-open .mt-grid,.modal-open .mt-pivot,.modal-open .mt-caption,.modal-open .mt-legend { opacity:0; }
+.mt-grid,.mt-pivot,.mt-caption,.mt-legend { transition:opacity .2s ease; }
+#launch-overlay { background:radial-gradient(ellipse at 50% 70%,#e8e8e8 0%,#8d9093 35%,#3a3c3e 100%); }
+.brand-logo { display:none; }

@@ -1,0 +1,26 @@
+/* The install wizard's own screen and the View picker. Deliberately plain: it belongs to no dashboard. */
+#wizard-stage { position:fixed; inset:0; z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2.2vh; padding:4vh 6vw; background:#15181b; color:#e9ecef; text-align:center; }
+#wizard-stage.hidden { display:none; }
+.wz-title { margin:0; font-size:var(--fs-title); font-weight:600; }
+.wz-sub { margin:0; font-size:var(--fs-text); color:#aab2b9; max-width:70vw; }
+.wz-help { margin:0; font-size:var(--fs-help); color:#8e979e; }
+.wz-host { width:min(78vw, 140vh); }
+.vp-stage { height:52vh; width:auto; max-width:100%; aspect-ratio:16/9; margin:0 auto; background:#0c0e10; border:1px solid #ffffff22; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+.vp-preview { width:100%; height:100%; object-fit:contain; }
+.vp-preview.vp-missing { visibility:hidden; }
+.vp-name { margin-top:1.6vh; font-size:var(--fs-row); font-weight:600; }
+.vp-blurb { margin:.4vh auto 0; max-width:60vw; min-height:2.6em; font-size:var(--fs-text); opacity:.8; }
+.vp-line { position:relative; display:flex; justify-content:space-between; margin:2.4vh auto 0; width:80%; }
+.vp-line::before { content:''; position:absolute; left:6%; right:6%; top:calc(var(--fs-small) * 1.6); height:2px; background:currentColor; opacity:.25; }
+.vp-mark { position:relative; flex:1; display:flex; flex-direction:column; align-items:center; gap:.6vh; opacity:.55; cursor:default; }
+.vp-year { font-size:var(--fs-small); }
+.vp-dot { width:1.6vh; height:1.6vh; border-radius:50%; background:currentColor; opacity:.7; }
+.vp-label { font-size:var(--fs-text); }
+.vp-mark.vp-current .vp-label::after { content:' ✓'; }
+.vp-mark.vp-focus { opacity:1; }
+.vp-mark.vp-focus .vp-dot { width:2.4vh; height:2.4vh; opacity:1; box-shadow:0 0 0 .5vh #ffffff44; }
+.vp-mark.vp-focus .vp-label { font-weight:700; }
+/* Inside Dashboard Settings the picker lives in a panel with less room than the wizard's full screen. */
+.vp-host .vp-stage { height:34vh; }
+.vp-host .vp-blurb { min-height:0; max-width:none; }
+.vp-host .vp-line { margin-top:1.4vh; width:96%; }

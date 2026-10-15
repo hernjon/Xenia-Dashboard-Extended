@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' kratos-art:; media-src 'self' kratos-art:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Xenia Dashboard</title>
+  <link id="skin-css" rel="stylesheet" href="skins/nxe/nxe.css">
+  <link rel="stylesheet" href="ui/notice.css">
+  <link rel="stylesheet" href="ui/wizard.css">
+  <script src="ui/ui-sounds.js" defer></script>
+  <script src="ui/ui-music.js" defer></script>
+</head>
+<body>
+  <div id="boot-screen" aria-hidden="true"></div>
+  <div id="toast" class="hidden" role="status" aria-live="polite"></div>
+  <header>
+    <div class="dashboard-nav"><span class="nav-faint nav-empty">·</span><span class="nav-muted nav-empty">·</span><div class="brand"><div class="brand-title">Game Library</div></div></div>
+    <div class="controls-hint">
+      <span><span class="key-badge">D-PAD</span> Scroll</span>
+      <span><span class="controller-button button-a" role="img" aria-label="A"><img src="assets/controller-buttons.jpg" alt="" draggable="false"></span> Select Game</span>
+      <span><span class="key-badge">LB / RB</span> Jump 5</span>
+    </div>
+  </header>
+  <div class="active-title-display">
+    <div class="active-title-text" id="active-title">Loading Library...</div>
+    <div class="active-subtitle" id="subtitle">Press A to Launch</div>
+  </div>
+  <div class="carousel-stage"><div class="carousel-track" id="carousel-track"></div></div>
+  <div id="counter" class="library-counter"></div>
+  <footer><div class="footer-controls"><span><span class="controller-button button-a" role="img" aria-label="A"><img src="assets/controller-buttons.jpg" alt="" draggable="false"></span> Select</span><span><span class="key-badge">D-PAD</span> Browse</span><span><span class="key-badge">LB / RB</span> Jump 5</span><span class="game-hint"><span class="controller-button button-x" role="img" aria-label="X"><img src="assets/controller-buttons.jpg" alt="" draggable="false"></span> Game settings</span><span class="game-hint"><span class="controller-button button-y" role="img" aria-label="Y"><img src="assets/controller-buttons.jpg" alt="" draggable="false"></span> Options</span><span><span class="key-badge">SELECT</span> Menu</span><span id="section-hint" class="hidden"><span class="key-badge">↑ ↓</span> Section</span></div><span id="controller-status">Connect an Xbox controller and press a button</span></footer>
+  <div id="wizard-stage" class="hidden"></div>
+  <div id="guide-dialog" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="guide-title" aria-describedby="guide-text">
+    <div class="guide-box"><h2 id="guide-title"></h2><p id="guide-text"></p><div id="guide-buttons" class="cover-options"></div></div>
+  </div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div id="launch-overlay" class="hidden" role="status" aria-live="polite">
+    <div><div class="brand-logo">X</div><h1 id="launch-title"></h1><p>Starting your game…</p></div>
+  </div>
+  <div id="overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <button id="close-admin" type="button" class="close-admin" aria-label="Close this screen">Close</button>
+    <h1 id="modal-title"></h1><p id="modal-help"></p>
+    <section class="panel">
+      <div class="panel-scroll"><div id="modal-content"></div><div id="modal-error" role="alert"></div></div>
+    </section>
+  </div>
+  <script src="dashboard/sections.js"></script>
+  <script src="dashboard/navigation.js"></script>
+  <script src="dashboard/skin.js"></script>
+  <script src="skins/nxe/nxe-skin.js"></script>
+  <script src="skins/blades/blades-skin.js"></script>
+  <script src="skins/kinect/kinect-skin.js"></script>
+  <script src="skins/metro-v1/metro-v1-skin.js"></script>
+  <script src="sections/library.js"></script>
+  <script src="sections/settings.js"></script>
+  <script src="ui/notice.js"></script>
+  <script src="ui/view-picker.js"></script>
+  <script src="ui/wizard.js"></script>
+  <script src="ui/covers-ui.js"></script>
+  <script src="ui/renderer.js"></script>
+</body>
+</html>
