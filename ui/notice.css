@@ -1,0 +1,23 @@
+/* The notification toast (notice.js): a grey pill sliding in from the right at the top right, in the style of the Xbox 360's achievement pop-up. */
+#toast { position:fixed; right:5vw; top:6vh; z-index:900; display:flex; align-items:center; gap:1.4vw; min-width:30vw; max-width:52vw; padding:.9vh 3.2vw .9vh .9vh; border-radius:999px;
+  color:#fff; pointer-events:none; opacity:0; transform:translateX(130%);
+  background:linear-gradient(180deg,#788484 0%,#5d6868 48%,#535d5d 100%); border:1px solid #ffffff2e;
+  box-shadow:0 .7vh 2.2vh #000b,inset 0 .25vh 0 #ffffff3d,inset 0 -.3vh 0 #0000002e;
+  transition:transform .5s cubic-bezier(.2,.85,.25,1),opacity .35s ease; }
+#toast.hidden { display:none; }
+#toast.show { opacity:1; transform:translateX(0); }
+#toast .toast-icon { flex:none; width:10vh; height:10vh; display:block; filter:drop-shadow(0 .3vh .6vh #0008); }
+#toast .toast-icon svg { width:100%; height:100%; display:block; }
+#toast .toast-words { display:flex; flex-direction:column; justify-content:center; min-width:0; text-shadow:0 .2vh .4vh #0006; }
+#toast .toast-title { font-weight:700; text-transform:uppercase; letter-spacing:.02em; font-size:clamp(18px,3.4vh,40px); line-height:1.1; white-space:nowrap; }
+#toast .toast-text { font-size:clamp(14px,2.6vh,30px); line-height:1.25; opacity:.95; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+body.reduce-motion #toast { transition:opacity .2s ease; transform:none; }
+
+/* The dashboard is for a gamepad and nothing in it needs the mouse pointer: it is hidden over the whole window. */
+html, html * { cursor: none !important; }
+
+/* One type scale for every view's screens, menus and dialogs (heights, so it follows the window; ~1080p / 1440p):
+   title 39 / 52 px, list rows 27 / 36, text 24 / 32, help line 22 / 29, small 21 / 27. */
+:root { --fs-title:3.6vh; --fs-row:2.5vh; --fs-text:2.2vh; --fs-help:2vh; --fs-small:1.9vh; }
+/* A message (an error, or "Downloading… 40%") stays in view at the bottom of the panel however far the content scrolls. */
+#modal-error:not(:empty) { position:sticky; bottom:0; z-index:5; padding:.8vh 1vw; margin:1vh 0 0; font-size:var(--fs-text); font-weight:600; border-radius:.5vh; background:#1b262d; color:#ffd89a; border:1px solid #ffffff30; }

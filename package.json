@@ -1,0 +1,86 @@
+{
+  "name": "xenia-dashboard",
+  "desktopName": "xenia-dashboard.desktop",
+  "version": "1.0.0",
+  "description": "Xenia Dashboard — a controller-first, Xbox 360-style dashboard that also configures the Xenia emulator (unofficial)",
+  "main": "src/main.js",
+  "author": "mfrafael",
+  "homepage": "https://github.com/mfrafael/xenia-dashboard",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:windows": "electron-builder --win",
+    "build:linux": "electron-builder --linux",
+    "test": "node --test \"test/**/*.test.js\"",
+    "shortcut": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-shortcut.ps1"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.0.12",
+    "ffmpeg-static": "^5.3.0"
+  },
+  "overrides": {
+    "@electron/get": {
+      "global-agent": "4.1.3"
+    }
+  },
+  "build": {
+    "appId": "app.xeniadashboard.launcher",
+    "productName": "Xenia Dashboard",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*.js",
+      "ui/**/*",
+      "index.html",
+      "dashboard/**/*",
+      "sections/**/*",
+      "skins/**/*",
+      "assets/**/*",
+      "scripts/windows-handoff.ps1",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "assets/icon.png"
+    },
+    "asarUnpack": [
+      "scripts/windows-handoff.ps1",
+      "node_modules/7zip-bin/**/*"
+    ],
+    "nsis": {
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Xenia Dashboard",
+      "artifactName": "Xenia-Dashboard-${version}-Setup.${ext}"
+    },
+    "linux": {
+      "maintainer": "mfrafael",
+      "icon": "assets/icon.png",
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "artifactName": "Xenia-Dashboard-${version}.${ext}"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
+    },
+    "portable": {
+      "artifactName": "Xenia-Dashboard-${version}-Portable.${ext}"
+    }
+  },
+  "dependencies": {
+    "7zip-bin": "5.2.0"
+  }
+}

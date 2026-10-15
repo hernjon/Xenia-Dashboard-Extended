@@ -1,0 +1,134 @@
+/* Kinect (2010), dashboard 2.0.13604: the green aura, a white floor, white tiles with the green swoosh, and white
+   lists with a green highlight beside a grey description panel. Sizes measured on a 1280×720 capture, in vw/vh. */
+:root { --kn-green-top:#7cc62a; --kn-green-bottom:#3f8f0c; --kn-text:#2c2c2c; --kn-muted:#6d6f70; }
+* { box-sizing:border-box; margin:0; padding:0; user-select:none; }
+body { height:100vh; overflow:hidden; color:#fff; background:#5cae1c; font-family:'Convection','Segoe UI','Selawik','Open Sans',Tahoma,system-ui,sans-serif; }
+.hidden { display:none!important; }
+button { font:inherit; border:1px solid #0000002a; padding:11px 14px; border-radius:0; color:var(--kn-text); background:linear-gradient(#ffffff,#dfe2e2); cursor:pointer; }
+button:focus-visible,input:focus-visible { outline:3px solid #fff; outline-offset:2px; }
+.key-badge { display:inline-flex; align-items:center; justify-content:center; color:#fff; font-size:.85em; opacity:.85; }
+
+/* The shared shell this skin does not use: it draws its own channels, tiles and button legend. */
+.carousel-stage,.active-title-display,.library-counter,header,footer { display:none!important; }
+
+/* The scene. */
+.kn-root { position:fixed; inset:0; z-index:5; overflow:hidden; pointer-events:none; }
+.kn-aura,.kn-floor { position:absolute; inset:0; width:100%; height:100%; display:block; }
+.kn-aura { object-fit:cover; }
+.kn-floor { transition:opacity .25s ease; }
+
+/* Channels: the open one right above the row, the ones passed fading upward. */
+.kn-channels { position:absolute; left:11.33vw; bottom:calc(100vh - 29.6vh); display:flex; flex-direction:column; }
+.kn-channel { font-size:3.9vh; line-height:4.7vh; white-space:nowrap; color:#fff; text-shadow:0 .15vh .35vh #2a4a0a66; }
+.kn-back-1 { opacity:.55; }.kn-back-2 { opacity:.3; }.kn-back-3 { opacity:.14; }
+.kn-open { font-weight:600; }
+
+/* Tiles: placed by kinect-skin.js with translate + scale from the top left corner. */
+.kn-row { position:absolute; inset:0; }
+.kn-tile { position:absolute; left:0; top:0; width:32.66vw; height:44.44vh; transform-origin:0 0; transition:transform .36s cubic-bezier(.18,.74,.25,1),opacity .25s ease; }
+.kn-still .kn-tile { transition:none; }
+body.reduce-motion .kn-tile { transition:none; }
+.kn-tile.before { opacity:.6; }
+.kn-portrait { transition:transform .36s cubic-bezier(.18,.74,.25,1),width .36s cubic-bezier(.18,.74,.25,1),height .36s cubic-bezier(.18,.74,.25,1),opacity .25s ease; }
+.kn-still .kn-portrait,body.reduce-motion .kn-portrait { transition:none; }
+/* Narrow portrait tile: the cover fills it, the swoosh keeps its proportions and shows at the right and bottom edges. */
+.kn-portrait .kn-swoosh { left:auto; right:0; top:0; bottom:auto; width:auto; height:100%; aspect-ratio:418/320; }
+.kn-portrait .kn-cover { left:7%; right:auto; top:5%; width:86%; height:73%; object-position:center bottom; }
+.kn-portrait .kn-label { left:7%; right:7%; bottom:5%; font-size:2.3vh; }
+.kn-portrait .kn-badge { display:none; }
+/* Focused: the cover on the left, the title under it, the whole swoosh on the right. */
+.kn-portrait.active .kn-swoosh { width:100%; aspect-ratio:auto; }
+.kn-portrait.active .kn-cover { left:6%; width:56%; top:6%; height:72%; object-position:left bottom; }
+.kn-portrait.active .kn-label { left:6%; right:25%; bottom:6%; font-size:3.05vh; }
+.kn-portrait.active .kn-badge { display:block; left:6%; bottom:1.5%; }
+.kn-face { position:absolute; inset:0; overflow:hidden; color:var(--kn-text); background:linear-gradient(180deg,#fdfdfd 0%,#f4f5f5 70%,#eceeee 100%); box-shadow:0 .2vh .5vh #0000001f; }
+.kn-swoosh { position:absolute; inset:0; width:100%; height:100%; }
+.kn-portrait .kn-icon { top:40%; height:34%; max-width:70%; }
+.kn-icon { position:absolute; left:50%; top:45%; height:43%; width:auto; max-width:56%; object-fit:contain; transform:translate(-50%,-50%); }
+.kn-shape { aspect-ratio:1; background:linear-gradient(180deg,#a2a7ac,#5c6570); -webkit-mask-position:center; mask-position:center; -webkit-mask-size:contain; mask-size:contain; -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; }
+.kn-cover { position:absolute; left:6%; right:22%; top:7%; height:68%; width:72%; object-fit:contain; object-position:left center; filter:drop-shadow(0 .4vh .6vh #0004); }
+.kn-label { position:absolute; left:4.6%; right:28%; bottom:9.5%; font-size:3.05vh; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.kn-badge { position:absolute; left:4.6%; bottom:3.2%; font-size:2.1vh; color:var(--kn-muted); white-space:nowrap; }
+.kn-shadow { position:absolute; left:4%; right:4%; top:104%; height:6%; border-radius:50%; background:radial-gradient(ellipse at center,#00000026,transparent 70%); filter:blur(.4vh); }
+.kn-tile:not(.active) .kn-shadow { opacity:.5; }
+
+/* Nothing to show (no games yet). */
+.kn-empty { position:absolute; left:11.33vw; top:36vh; right:15vw; color:var(--kn-text); }
+.kn-empty-title { font-size:4.2vh; margin-bottom:1.2vh; }
+.kn-empty-text { font-size:2.8vh; color:var(--kn-muted); }
+
+/* Button legend (bottom left) and the orb (bottom right). */
+.kn-legend { position:absolute; left:11.33vw; top:87.6vh; display:flex; gap:2.2vw; align-items:center; }
+.kn-key { display:flex; align-items:center; gap:.7vw; font-size:2.6vh; color:#fff; text-shadow:0 .1vh .3vh #0000008c; white-space:nowrap; }
+.kn-key img { width:4.6vh; height:4.6vh; margin:-.6vh -.3vw; }
+.kn-orb { position:absolute; left:calc(89.84vw - 6.2vh); top:81.7vh; width:12.4vh; height:12.4vh; }
+.kn-orb img { width:100%; height:100%; display:block; }
+.kn-orb::after { content:''; position:absolute; left:30%; right:30%; top:84%; height:10%; border-radius:50%; background:radial-gradient(ellipse at center,#0000003a,transparent 70%); }
+
+/* Screens drawn by renderer.js: the floor and the row go, the aura stays; a white list with a green highlight on the
+   left half of the panel, the description on a grey right half (as System Settings). */
+.modal-open .kn-floor,.modal-open .kn-row,.modal-open .kn-channels,.modal-open .kn-legend,.modal-open .kn-empty { opacity:0; }
+.kn-row,.kn-channels,.kn-legend,.kn-empty { transition:opacity .2s ease; }
+#overlay { position:fixed; inset:0; z-index:200; }
+#modal-title { position:fixed; left:11.33vw; top:6.6vh; font-size:var(--fs-title); font-weight:600; color:#fff; text-shadow:0 .15vh .4vh #1f3d0880; }
+#modal-help { position:fixed; left:11.33vw; right:16vw; top:88vh; color:#fff; text-shadow:0 .1vh .3vh #0000008c; font-size:var(--fs-help); line-height:1.7; }
+.close-admin { position:fixed; right:15.6vw; top:7.2vh; padding:.6vh 1.2vw; font-size:var(--fs-small); }
+.panel { position:fixed; left:15.62vw; top:15.83vh; width:68.75vw; height:66.8vh; overflow:hidden; color:var(--kn-text); background:linear-gradient(180deg,#f7f8f8,#dadddd); box-shadow:0 .3vh 1vh #0000002a; }
+.panel:has(.settings-shell)::after { content:''; position:absolute; left:50%; right:0; top:0; bottom:0; background:linear-gradient(180deg,#8f9497,#6f7477); z-index:0; }
+.panel-scroll { position:relative; z-index:1; width:100%; height:100%; overflow:auto; scrollbar-width:thin; scrollbar-color:#9ea3a6 transparent; padding:2vh 1.6vw; }
+.panel:has(.settings-shell) .panel-scroll { padding:0; }
+#modal-error { min-height:24px; color:#b02a10; margin:1vh 1.6vw; }
+.settings-shell { display:grid; grid-template-columns:50% 50%; min-height:100%; }
+.settings { position:relative; display:flex; flex-direction:column; }
+.settings button,.cover-options button { position:relative; z-index:1; color:var(--kn-text); background:transparent; border:0; border-bottom:1px solid #a9adae; font-size:var(--fs-row); line-height:1.2; padding:1.3vh 1.6vw; text-align:left; overflow-wrap:anywhere; }
+.settings button.selected,.cover-options button.selected { color:#fff; }
+.settings-highlight,.cover-options button.selected { background:linear-gradient(180deg,var(--kn-green-top),var(--kn-green-bottom)); }
+.settings-highlight { position:absolute; left:0; right:0; top:0; transition:transform .12s ease,height .12s ease; pointer-events:none; }
+body.reduce-motion .settings-highlight { transition:none; }
+.settings-details { position:sticky; top:0; align-self:start; padding:4vh 2.4vw; color:#fff; font-size:var(--fs-text); line-height:1.45; overflow-wrap:anywhere; }
+.detail-label { margin-bottom:.8vh; opacity:.85; }.setting-value { min-height:4vh; font-size:1.1em; }.setting-description { margin-top:2.6vh; white-space:pre-line; }
+.cover-summary { margin-bottom:1vh; font-size:var(--fs-text); }
+.cover-options { display:grid; gap:0; max-height:52vh; overflow-y:auto; margin-top:1vh; }
+.cover-options button { font-size:var(--fs-row); padding:1vh 1.2vw; }
+.cover-options button.group-start { margin-top:1vh; border-top:2px solid #a9adae!important; }
+.entry { padding:1.4vh 1vw; margin-bottom:1.4vh; min-height:6vh; overflow-wrap:anywhere; white-space:pre-wrap; background:#fff; color:var(--kn-text); border:1px solid #b9bdbe; font-size:var(--fs-row); }
+.entry-input { width:100%; font:inherit; color:var(--kn-text); background:#fff; border:1px solid #b9bdbe; user-select:text; }
+.edit-actions { display:flex; gap:8px; margin:12px 0; }
+.key-grid { display:grid; grid-template-columns:repeat(10,1fr); gap:4px; }.pin-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; max-width:360px; margin:auto; }
+.panel .key-grid button.selected,.panel .pin-grid button.selected,.panel .edit-actions button.selected { color:#fff; background:linear-gradient(180deg,var(--kn-green-top),var(--kn-green-bottom)); }
+.game-details { font-size:var(--fs-text); line-height:1.4; max-height:52vh; overflow-y:auto; }
+.game-details h2 { margin:0 0 1vh; font-weight:600; }.game-details h3 { margin:2vh 0 1vh; font-weight:600; font-size:1em; }
+.game-fact { color:var(--kn-muted); }.game-description { margin-top:1.4vh; }
+.achievement-list { display:grid; gap:6px; }
+.achievement { display:grid; grid-template-columns:4.2em 1fr; column-gap:12px; color:var(--kn-muted); }.achievement.achieved { color:var(--kn-text); }
+.achievement-score { grid-row:span 2; align-self:center; text-align:right; }.achievement-text { font-size:.85em; }
+.lb-preview { display:none; max-width:100%; max-height:34vh; object-fit:contain; margin-top:10px; }
+.settings-details .game-details,.settings-details .game-fact,.settings-details .achievement { color:#fff; }
+
+/* Status line and the A/B/X/Y glyphs used in the screens' help line (Kinect legends from the theme state). */
+#status { position:fixed; top:2vh; left:50%; transform:translateX(-50%); z-index:60; color:#fff; text-shadow:0 1px 4px #0008; font-size:15px; }
+.controller-button { position:relative; display:inline-block; flex:none; width:3.3vh; height:3.3vh; overflow:hidden; border-radius:50%; vertical-align:middle; margin:0 .3vw; }
+.controller-button img { position:absolute; width:387.3684%; max-width:none; height:auto; pointer-events:none; }
+.button-a img { left:-143.6842%; top:-252.6316%; }.button-b img { left:-252.6316%; top:-143.6842%; }
+.button-x img { left:-35.2632%; top:-143.6842%; }.button-y img { left:-143.6842%; top:-35.2632%; }
+.controller-button.native-glyph img { width:100%; height:100%; left:0; top:0; object-fit:contain; }
+
+/* Boot animation (shared shell element). */
+#boot-screen { position:fixed; inset:0; z-index:1000; background:#000; }
+#boot-screen video { width:100%; height:100%; object-fit:cover; }
+
+/* The Guide and confirmations: a white box with a green highlight over the dimmed dashboard. */
+#guide-dialog { position:fixed; inset:0; z-index:250; display:flex; align-items:center; justify-content:center; background:#00000099; }
+.guide-box { width:min(620px,52vw); padding:3vh 0 1.5vh; color:var(--kn-text); background:linear-gradient(180deg,#f7f8f8,#d8dbdb); box-shadow:0 2vh 6vh #000a; }
+.guide-box h2 { margin:0 1.8vw 1vh; font-weight:600; font-size:var(--fs-title); }
+.guide-box p { margin:0 1.8vw 2vh; font-size:var(--fs-text); line-height:1.35; color:#4a4c4d; }
+#guide-buttons { margin-top:0; max-height:52vh; overflow-y:auto; border-top:1px solid #a9adae; }
+#guide-buttons button { padding-left:1.8vw; }
+
+/* Starting a game: the aura with the orb and the title. */
+#launch-overlay { position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center; text-align:center; background:radial-gradient(ellipse at 50% 55%,#d7ea15 0%,#86cc22 45%,#2f8a1c 100%); text-shadow:0 .2vh .5vh #1f3d0880; }
+.brand-logo { width:12vh; height:12vh; margin:0 auto 3vh; display:flex; align-items:center; justify-content:center; font-size:2.2rem; color:#3f8f0c; }
+.native-launch-orb img { width:100%; height:100%; display:block; }
+#launch-title { max-width:80vw; overflow-wrap:anywhere; font-weight:600; font-size:5vh; }
+#launch-overlay p { opacity:.9; font-size:var(--fs-row); }
+@media(max-width:750px) { .key-grid { gap:3px; }.key-grid button { padding:8px 3px; } .panel { left:4vw; width:92vw; } }
