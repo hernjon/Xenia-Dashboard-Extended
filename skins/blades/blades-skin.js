@@ -102,6 +102,8 @@
         // in every position follows one rule instead of a hand-tuned offset.
         const key = index === at ? 'header' : `size${size}-${index < at ? 'left' : 'right'}`;
         put(label, bx + BODY_CENTRE[key] * TEXTURE_UNITS, ly);
+        // The names on the right sit a little left of the box centre; in a narrow window the blades get thinner but the letters do not, so they step back further.
+        label.style.marginLeft = index > at ? `${-(4 + 6 * Math.max(0, 1 - kx / (1024 / 720)))}px` : ''; // 1024 / 720 is the 16:9 stretch: 4 px back there, up to 10 in a narrow window
         label.classList.toggle('open', index === at);
       });
       put(parts.swirl, x, 0, 610, 576); put(parts.tint, x, 0, 610, 576); parts.tint.src = `${A}bg-${color}-alpha.png`;
@@ -121,8 +123,9 @@
       put(parts.pill, 121 + dx, 413, 492, 71); put(parts.pillText, 191 + dx, 413, 400, 71);
       // The button hints sit 7 units lower than the original's (505 / 525) so they clear the curved top edge of the bottom band.
       const HINT = 7;
-      put(parts.keys.y, 160 + dx, 505 + HINT, 18, 21); put(parts.keys.x, 147 + dx, 525 + HINT, 18, 21);
-      put(parts.keys.b, 550 + dx, 505 + HINT, 18, 21); put(parts.keys.a, 563 + dx, 525 + HINT, 18, 21);
+      // The button pictures are square (64 × 64) and stay square whatever the window shape (keep = true: they only move).
+      put(parts.keys.y, 160 + dx, 505 + HINT, 21, 21, true); put(parts.keys.x, 147 + dx, 525 + HINT, 21, 21, true);
+      put(parts.keys.b, 550 + dx, 505 + HINT, 21, 21, true); put(parts.keys.a, 563 + dx, 525 + HINT, 21, 21, true);
       put(parts.keyText.x, 172 + dx, 526 + HINT); put(parts.keyText.y, 185 + dx, 506 + HINT); put(parts.keyText.a, 545 + dx, 526 + HINT);
       if (!animate) requestAnimationFrame?.(() => body()?.classList.remove('bl-still'));
     }

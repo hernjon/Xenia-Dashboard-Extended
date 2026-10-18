@@ -37,7 +37,7 @@ const backLabel=()=>'Return to dashboard';
 let themeState={backgrounds:[],selected:null};
 let discView=null;
 let motionMode='on';
-let entryAfterUnlock=null,unlockSection,entryMode=null,dialog=null,xeniaReady=true;
+let pinShown=true,entryAfterUnlock=null,unlockSection,entryMode=null,dialog=null,xeniaReady=true;
 let updatesView=null,updatesChannel='edge',updatesLatest={};
 let settingsTitle='PIN and locks';
 let xeniaView=null,xeniaScope=null,xeniaPath=null,xeniaEdit=null,gameTarget=null,patchView=null;
@@ -72,7 +72,7 @@ const percent=()=>Math.round((themeState.audio?.volume ?? .5)*100);
 function renderThemes(){
   mode='themes';selected=0;modal('View','D-pad: choose · A: apply · B: return to settings');
   const wallpaper=themeState.backgrounds.find(b=>b.id===themeState.selected);
-  themeRows=[{key:'view',label:`View: ${lookLabel(skin.name)}`},...(themeState.backgrounds.length?[{key:'wallpaper',label:`Wallpaper: ${wallpaper?.label||'default'}`}]:[]),{key:'return',label:backLabel()}];
+  themeRows=[{key:'view',label:`View: ${lookLabel(skin.name)}`},...(themeState.backgrounds.length?[{key:'wallpaper',label:`Wallpaper: ${wallpaper?.label||'default'}`}]:[]),{key:'window',label:`Window: ${themeState.window_mode==='windowed'?'Windowed':'Fullscreen'}`},{key:'return',label:backLabel()}];
   content.replaceChildren(node('p','cover-summary','Changes how the whole dashboard looks and moves. Your games and settings stay the same.'));
   buttons(themeRows.map(row=>row.label),'cover-options',activate);
 }
@@ -119,6 +119,7 @@ async function activateTheme(){
   const row=themeRows[selected];if(!row||row.key==='return')return returnSettings();
   const keep=work=>keepRow(work,renderThemes);
   if(row.key==='view')return openViewPicker();
+  if(row.key==='window')return openChoice({title:'Window',text:'Fullscreen is the console way. Windowed gives the dashboard a title bar you can move and resize. The dashboard restarts to apply it.',options:[{value:'fullscreen',label:'Fullscreen'},{value:'windowed',label:'Windowed'}],current:themeState.window_mode==='windowed'?'windowed':'fullscreen',onPick:value=>keep(()=>api.setWindowMode(value))});
   // The wallpaper changes behind the menu as the cursor moves; A keeps it, B puts the current one back.
   const preview=id=>skin.applyTheme({...themeState,selected:id},{status});
   return openChoice({title:'Wallpaper',text:'Move to preview it. A keeps it, B goes back to the current one.',options:themeState.backgrounds.map(b=>({value:b.id,label:b.label})),current:themeState.selected,onFocus:preview,onCancel:()=>preview(themeState.selected),onPick:id=>keep(()=>api.selectTheme(id))});
@@ -181,8 +182,9 @@ async function openPin() {
   if(busy || mode!=='library')return;returnToLibrary();busy=true;
   try {
     const access=await api.getAdminAccess(unlockSection);window.uiSounds?.play('open');mode='pin';pin='';selected=0;
-    modal('Administrator PIN','Type PIN + Enter, or use the keypad. D-pad: choose · A: enter · X: erase · Y: submit · Esc/B: cancel');renderPin();
-    if(!access.pin_required){busy=false;return await submitPin();}
+    // No PIN asked: nothing to show, the section just opens (and if it cannot, submitPin says why from the library).
+    if(!access.pin_required){pinShown=false;busy=false;return await submitPin(false);}
+    pinShown=true;modal('Administrator PIN','Type PIN + Enter, or use the keypad. D-pad: choose · A: enter · X: erase · Y: submit · Esc/B: cancel');renderPin();
   }catch(error){gameTarget=null;entryAfterUnlock=null;unlockSection=undefined;status(error.message);}finally{busy=false;}
 }
 function renderPin() { content.replaceChildren(node('div','entry','●'.repeat(pin.length) || 'Enter PIN'));buttons(pinKeys,'pin-grid',activate); }
@@ -267,7 +269,7 @@ async function changeSecurity(work){busy=true;try{await work();renderSettings();
 async function submitPin(withSound=true) {
   if(busy)return;if(withSound)window.uiSounds?.play('right');busy=true;
   try { await api.unlockAdmin(pin,unlockSection);pin='';if(entryAfterUnlock){const go=entryAfterUnlock;entryAfterUnlock=null;return await go();}if(gameTarget)return renderGameMenu();closeModal(); }
-  catch(error){pin='';renderPin();errorDisplay.textContent=error.message;}finally{busy=false;}
+  catch(error){pin='';if(pinShown){renderPin();errorDisplay.textContent=error.message;}else{closeModal();reportProblem(error.message);}}finally{busy=false;}
 }
 async function finishEdit() {
   if(xeniaEdit)return finishXeniaEdit();
@@ -281,7 +283,18 @@ function xeniaValueLabel(item){if(item.type==='string'&&!item.options.length)ret
 function xeniaGroup(){return xeniaView&&xeniaPath?(xeniaPath.kind==='section'?xeniaView.advanced:xeniaView.categories).find(g=>g.id===xeniaPath.id):null;}
 function xeniaItems(){return xeniaGroup()?.items || [];}
 function xeniaTitle(){return xeniaView?.game?`${xeniaView.game.title} · Game settings`:entryMode==='advanced'?'Advanced':'System settings';}
-async function openXenia(gameId){busy=true;try{xeniaView=await api.getXeniaSettings(gameId);xeniaScope=gameId;xeniaPath=null;renderXeniaHome();}catch(error){errorDisplay.textContent=error.message;}finally{busy=false;}}
+// A problem found while opening a Xenia screen, told in a window instead of the line at the top. The two ways Xenia can be
+// missing (not installed here, or installed but never run) say what to do; anything else shows its message.
+function reportProblem(raw){
+  const message=String(raw).replace(/^Error invoking remote method '[^']*': (Error: )?/,'');
+  const ok=[{label:'OK',run:()=>{}}];
+  if(/Install or choose a Xenia/.test(message))return showDialog({title:'Xenia is not set up',text:'These settings belong to Xenia, and no Xenia is set up yet. Install one, or choose a copy you already have, now?',
+    buttons:[{label:'Set up Xenia',run:()=>enterFromDashboard('xenia:updates')},{label:'Not now',run:()=>{}}],onCancel:()=>{}});
+  if(/has not created/.test(message))return showDialog({title:'Start Xenia once',text:FIRST_RUN_TEXT,buttons:ok,onCancel:()=>{}});
+  showDialog({title:'Xenia',text:message,buttons:ok,onCancel:()=>{}});
+}
+// If Xenia cannot be read (it never ran, so it has no settings file yet) the screen is left and the reason shown on the library, not on a PIN pad.
+async function openXenia(gameId){busy=true;try{xeniaView=await api.getXeniaSettings(gameId);xeniaScope=gameId;xeniaPath=null;renderXeniaHome();}catch(error){closeModal();reportProblem(error.message);}finally{busy=false;}}
 // System settings lists only the system categories. Profiles and Advanced have their own tiles in the Xenia
 // section (as Profile sat apart from System Settings on the 360), so they are not repeated here; a game's
 // settings keep Advanced because that is the only way to it from there.
@@ -690,11 +703,17 @@ function updatesRows(){
   const channel=updatesChannelInfo(),latest=updatesLatest[channel.id],rows=[];
   if(updatesView.channels.length>1)rows.push({action:'channel',label:`Channel: ${channel.label}`});
   if(!channel.supported)return [...rows,{action:'return',label:backLabel()}];
-  rows.push({action:'check',label:'Check for updates'});
+  // The screen checks for a newer build whenever it opens or the channel changes, so there is no Check button: one row under the
+  // channel says where things stand (A on "Up to date" or on a failed check just checks again).
+  const installed=!!channel.installed;
   // Your own copy of Xenia (not installed by the dashboard) that is already the latest build needs nothing.
-  const ownLatest=!channel.installed&&latest?.tag&&latest.current_tag===latest.tag;
-  if(ownLatest||(latest?.tag&&channel.installed?.tag===latest.tag))rows.push({action:'current',label:'Up to date ✓'});
-  else rows.push({action:'install',label:channel.installed?(latest?.tag?`Update to ${latest.tag}`:'Update to the latest'):(latest?.tag?`Install ${latest.tag}`:`Install ${channel.label}`)});
+  const ownLatest=!installed&&latest?.tag&&latest.current_tag===latest.tag;
+  if(latest==='checking')rows.push({action:'wait',label:'Checking for updates…'});
+  else if(latest?.error)rows.push({action:'check',label:'Could not check · try again'});
+  else if(ownLatest||(latest?.tag&&installed&&channel.installed.tag===latest.tag))rows.push({action:'current',label:'Up to date ✓'});
+  else if(!installed)rows.push({action:'install',label:latest?.tag?`Install ${latest.tag}`:`Install ${channel.label}`});
+  else if(latest?.tag)rows.push({action:'install',label:`Update to ${latest.tag}`});
+  else rows.push({action:'check',label:'Check for updates'});
   if(channel.installed&&!channel.in_use)rows.push({action:'use',label:'Use it in Xenia Dashboard'});
   if(channel.previous)rows.push({action:'rollback',label:`Go back to ${channel.previous.tag}`});
   rows.push({action:'own',label:'Use my own Xenia…'});
@@ -725,7 +744,7 @@ function updateUpdatesDetails(){
     if(latest==='checking')lines.push('Checking GitHub for the latest build…');
     else if(latest?.error)lines.push(`Could not check: ${latest.error}`);
     else if(latest?.tag)lines.push(`Latest: ${latest.tag} (${latest.published_at}) · ${megabytes(latest.asset.size)}`,latest.notes?`\n${latest.notes}`:'');
-    else lines.push('Press Check for updates to see the latest build.');
+    else lines.push('Press A on the first row to check for the latest build.');
     // Say what the dashboard launches today, and which official build that is when it can be told.
     if(updatesView.configured&&!channel.in_use){
       const known=latest&&typeof latest==='object'&&!latest.error&&latest!=='checking';
@@ -750,19 +769,28 @@ async function activateUpdate(){
   const row=updatesRows()[selected],channel=updatesChannelInfo(),index=selected;if(!row)return;
   const run=async(work,done)=>{busy=true;try{updatesView=await work();xeniaReady=!!updatesView.configured;if(done)done();renderUpdates(index);}catch(error){errorDisplay.textContent=error.message;}finally{busy=false;}};
   if(row.action==='return')return returnSettings();
-  if(row.action==='check')return checkUpdates();
+  if(row.action==='wait')return;
+  if(row.action==='check'||row.action==='current')return checkUpdates();
   if(row.action==='channel')return openChoice({title:'Channel',options:updatesView.channels.map(item=>({value:item.id,label:`${item.label}${item.supported?'':' (not available on this system)'}${item.in_use?' · in use':''}`})),current:channel.id,onPick:value=>{updatesChannel=value;renderUpdates(0);checkUpdates();}});
   if(row.action==='install'){
     errorDisplay.textContent='Downloading…';const before=updatesView.configured;
     return run(()=>api.installUpdate(channel.id),()=>{
       const fresh=updatesChannelInfo();
       // An existing Xenia keeps being used unless the user says otherwise.
-      if(fresh.installed&&!fresh.in_use&&before)setTimeout(()=>openChoice({title:'Use the new version?',text:'Xenia Dashboard currently launches another Xenia. Switch to the one just installed?',options:[{value:false,label:'Keep my current Xenia'},{value:true,label:`Use ${fresh.label} ${fresh.installed.tag}`}],current:false,onPick:value=>value?run(()=>api.useUpdate(fresh.id)):undefined}),0);
+      const asksToSwitch=fresh.installed&&!fresh.in_use&&before;
+      if(!asksToSwitch)explainFirstRun();
+      if(asksToSwitch)setTimeout(()=>openChoice({title:'Use the new version?',text:'Xenia Dashboard currently launches another Xenia. Switch to the one just installed?',options:[{value:false,label:'Keep my current Xenia'},{value:true,label:`Use ${fresh.label} ${fresh.installed.tag}`}],current:false,onPick:value=>value?run(()=>api.useUpdate(fresh.id)):undefined}),0);
     }).then(()=>{if(!errorDisplay.textContent.startsWith('Could'))errorDisplay.textContent=errorDisplay.textContent.startsWith('Downloading')?'Installed.':errorDisplay.textContent;});
   }
   if(row.action==='own')return run(()=>api.chooseOwnXenia(),()=>{errorDisplay.textContent='Xenia Dashboard now launches the Xenia you chose.';});
   if(row.action==='use')return run(()=>api.useUpdate(channel.id),()=>{errorDisplay.textContent='Xenia Dashboard now launches this version.';});
   if(row.action==='rollback')return run(()=>api.rollbackUpdate(channel.id),()=>{errorDisplay.textContent='Went back to the earlier version.';});
+}
+// A Xenia that has never run has no settings file, and Profiles and Advanced need it: say so once, right after installing it.
+const FIRST_RUN_TEXT='To change Profiles or Advanced settings, Xenia has to run at least once: that is when it creates the configuration files the dashboard needs. Start any game, close it, and they will be there.';
+function explainFirstRun(){
+  if(!updatesView?.configured||updatesView.config_ready)return;
+  setTimeout(()=>showDialog({title:'Start Xenia once',text:FIRST_RUN_TEXT,buttons:[{label:'OK',run:()=>{}}],onCancel:()=>{}}),0);
 }
 function openGameOptions(focused){
   const game=discView?discView.game:focused||displayedGames()[nav.index('library')];if(busy||!game)return;
@@ -866,7 +894,7 @@ window.addEventListener('keydown',event=>{
   if(mode==='pin'&&/^\d$/.test(event.key)){if(pin.length<8){window.uiSounds?.play('right');pin+=event.key;}renderPin();return;}
   if(mode==='keyboard'&&event.key.length===1){if(editText.length<4096)editText+=event.key;renderKeyboard();return;}
   if(event.key==='Escape'&&mode==='library'&&!discView){event.preventDefault();openGuide();return;}
-  const action={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',PageUp:'lt',PageDown:'rt',Enter:'a',Backspace:'x',x:'x',X:'x',y:'y',Y:'y',Escape:'b'}[event.key];if(action){event.preventDefault();input(action);}
+  const action={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',a:'left',A:'left',d:'right',D:'right',w:'up',W:'up',s:'down',S:'down',PageUp:'lt',PageDown:'rt',q:'lt',Q:'lt',e:'rt',E:'rt',Enter:'a',Backspace:'x',x:'x',X:'x',y:'y',Y:'y',Escape:'b'}[event.key];if(action){event.preventDefault();input(action);}
 });
 // ---- The install wizard (first run, or Dashboard Settings › Install Wizard) ----
 const wizardStage=document.getElementById('wizard-stage');
@@ -901,9 +929,30 @@ const WIZARD_STEPS=[
     primary:xeniaReady?'Change Xenia':'Install or choose Xenia',onPrimary:()=>enterFromDashboard('xenia:updates',()=>wizardRun?.open())})},
   {id:'folders',enter:()=>wizardCard({title:'Choose your game folders',text:'Pick the folders where your games are. The library is read when you leave the screen.',
     primary:'Choose game folders',onPrimary:()=>enterFromDashboard('xenia:locations',()=>wizardRun?.open())})},
-  {id:'covers',when:()=>gamesList.length>0,enter:()=>wizardCard({title:'Download covers',text:`${gamesList.length} games found. Download their covers now?`,
-    primary:'Download covers',onPrimary:()=>enterFromDashboard('dashboard:covers',()=>wizardRun?.open())})}
+  {id:'covers',when:()=>gamesList.length>0,enter:()=>wizardCard({title:'Download covers',text:`${gamesList.length} games found. Download their covers now? It all happens here: the data first (about 105 MB, once), then a cover for each game.`,
+    primary:'Download covers',onPrimary:wizardCovers})}
 ];
+// The covers step does the whole job without leaving the wizard: the source's data if it has none yet, then the covers of the
+// games that have none. Progress shows on the card; when it ends the card offers Continue (or Try again).
+async function wizardCovers(){
+  if(busy)return;busy=true;
+  const card=(title,text,buttons)=>showDialog({title,text:`${wizardStrip()} — ${text}`,buttons,onCancel:()=>{}});
+  wizardCoverNote=text=>{const box=document.getElementById('guide-text');if(box)box.textContent=`${wizardStrip()} — ${text}`;};
+  try{
+    const info=AUTO_MODES.find(m=>m.value===cm.mode)||AUTO_MODES[0],sources=await api.coverSources();
+    for(const id of info.needs){
+      const source=sources.find(s=>s.id===id);if(!source||!coverNeedsData(source))continue;
+      card('Downloading covers',`Downloading ${source.label} data…`,[{label:'Please wait…',run:()=>{}}]);await api.prepareCoverSource(id);
+    }
+    card('Downloading covers','Downloading covers…',[{label:'Please wait…',run:()=>{}}]);
+    const result=await api.autoCovers(cm.mode,false);gamesList=result.games;renderCarousel();
+    wizardCoverNote=null;busy=false;
+    card('Covers',`${result.downloaded} cover${result.downloaded===1?'':'s'} downloaded${result.missing?` · ${result.missing} not found`:''}.`,[{label:'Continue',run:()=>wizardRun.next()}]);
+  }catch(error){
+    wizardCoverNote=null;busy=false;
+    card('Covers could not be downloaded',error.message,[{label:'Try again',run:wizardCovers},{label:'Skip this step',run:()=>wizardRun.next()}]);
+  }
+}
 async function endWizard(){
   showStage(false);mode='library';
   try{await api.wizardEnd();}catch(error){status(error.message);}
@@ -926,6 +975,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
   if(!api){endBoot();status('Start with npm run start to enable the native launcher.');renderCarousel();return;}
   api.onCloseRequest?.(handleCloseRequest);
   api.onNotice?.(notice=>uiNotices.post(notice));
+  api.onWindowMode?.(windowMode=>{themeState={...themeState,window_mode:windowMode};if(mode==='themes')renderThemes();});
   api.onCoverProgress?.(coverProgress);
   api.onContentProgress?.(progress=>{if(mode==='content'&&busy&&progress.total)errorDisplay.textContent=`Copying… ${Math.floor(progress.received/progress.total*100)}%`;});
   api.onUpdateProgress?.(progress=>{if(mode==='updates'&&busy&&progress.total)errorDisplay.textContent=`Downloading… ${Math.floor(progress.received/progress.total*100)}%`;});

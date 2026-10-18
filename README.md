@@ -26,7 +26,8 @@ Every view shares the same core: the same sections, the same menus, the same con
 
 ## Made for the couch
 
-- **Everything works with a gamepad.** D-pad or stick to browse, **A** to select, **B** to go back, **X** for game settings, **Y** for options, **LB / RB** to jump five games, **LT / RT** to switch section, **SELECT** for the Guide. Keyboard and mouse pickers work too.
+- **Everything works with a gamepad.** D-pad or stick to browse, **A** to select, **B** to go back, **X** for game settings, **Y** for options, **LB / RB** to jump five games, **LT / RT** to switch section, **SELECT** for the Guide. On a keyboard the arrow keys or **W A S D** move, **Enter** is A, **Esc** is B, **Q / E** are LT / RT, and mouse and keyboard file pickers work too.
+- **Fullscreen or windowed.** Fullscreen is the console way; *Dashboard Settings › View › Window* (or **Alt + Enter** anywhere) turns the dashboard into a normal window you can move and resize. It switches at once, on the same screen, and remembers the size and place of the window. It works with every view and follows the shape you give it.
 - **Menus the Xbox way.** Press A on any option to open its list; ←/→ still step through values, B cancels. No repeated menus, and *Advanced* is always last.
 - **The real sounds.** Blade slides, focus, select, back and the notification chime, taken from the console's own dashboards, in the right places for each era.
 - **A first-run wizard.** On a new install the Install Wizard opens by itself: you pick a view on a timeline of the Xbox 360 dashboards, then set up Xenia, your game folders and the covers. Run it again any time from *Dashboard Settings › Install Wizard*.
@@ -44,7 +45,7 @@ The first screen is deliberately neutral, so it does not favour any era: a timel
 
 ![Game options](docs/screenshots/game-options.jpg)
 
-- **Covers:** one manager per game or in bulk (*Download missing* / *Redownload all*), from a local file, the Xenia Manager database or LaunchBox.
+- **Covers:** one manager per game or in bulk (*Download covers* / *Download missing covers*), from a local file, the Xenia Manager database or LaunchBox.
 - **Game details** from x360db, with title IDs read from ISO / XEX / STFS headers, so Arcade and Games-on-Demand packages are listed too. Multi-disc games become one tile.
 - **DLC and title updates** found in your ROM folder are copied unchanged into Xenia's content folder.
 - **Patches:** download and toggle them by name ([game-patches](https://github.com/xenia-canary/game-patches)).

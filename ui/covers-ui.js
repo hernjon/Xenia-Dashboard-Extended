@@ -31,8 +31,9 @@ function coverRows() {
   if (stage === 'setup') return [{ action: 'prepare', source: cm.source, label: `Download ${cm.source.label} data` }, { action: 'back', label: 'Return' }];
   if (stage === 'games') return [...cm.games.map(game => ({ action: 'game', game, label: `${game.title} (${game.pictures})` })), ...(cm.source.needs_download ? [{ action: 'prepare', source: cm.source, label: `Update ${cm.source.label} data` }] : []), { action: 'back', label: 'Return' }];
   if (stage === 'pictures') return [...cm.pictures.map(picture => ({ action: 'use', picture, label: picture.label })), { action: 'back', label: 'Back' }];
-  const missing = coverModeInfo().needs.map(coverSourceInfo).filter(coverNeedsData);
-  return [{ action: 'auto', label: 'Download missing covers' }, { action: 'auto-all', label: 'Redownload all covers' }, { action: 'mode', label: `Source: ${coverModeInfo().label}` }, ...missing.map(source => ({ action: 'prepare', source, label: `Download ${source.label} data` })), { action: 'rescan', label: 'Rescan local cover images' }, { action: 'back', label: 'Return' }];
+  // Source first, then its data, then the downloads, then the local scan. A source that needs no data has no data row.
+  const data = coverModeInfo().needs.map(coverSourceInfo).filter(source => source?.needs_download);
+  return [{ action: 'mode', label: `Source: ${coverModeInfo().label}` }, ...data.map(source => ({ action: 'prepare', source, label: `Update ${source.label} data` })), { action: 'auto-all', label: 'Download covers' }, { action: 'auto', label: 'Download missing covers' }, { action: 'rescan', label: 'Rescan local cover images' }, { action: 'back', label: 'Return' }];
 }
 function coverTitle() {
   const name = cm.context?.game?.title;
@@ -81,7 +82,7 @@ function updateCoverDetails() {
     if (row?.action === 'auto-all') { value.textContent = `${gamesList.length} game${gamesList.length === 1 ? '' : 's'}`; lines.push(`Replaces the cover of every game, using: ${info.label}. A game the source has no picture for keeps its current cover.`, 'This includes covers you chose yourself.'); }
     else if (row?.action === 'auto') { value.textContent = missing ? `${missing} game${missing === 1 ? '' : 's'} without a cover` : 'Every game has a cover'; lines.push(`Fills only the games that have no cover, using: ${info.label}. Covers you already have are never replaced.`, 'LaunchBox only takes a cover when the whole game name matches; the Xenia Manager database matches by title ID.'); }
     else if (row?.action === 'mode') { value.textContent = info.label; lines.push('Press A to choose where the automatic download looks. To change one game by hand (any source, with a preview), press Y on it and choose Change cover.'); }
-    else if (row?.action === 'prepare') { value.textContent = 'Not downloaded yet'; lines.push(SOURCE_NOTES[row.source.id] || 'This source needs a one-time download.'); }
+    else if (row?.action === 'prepare') { value.textContent = sourceStatusText(row.source); lines.push(SOURCE_NOTES[row.source.id] || 'This source keeps a local copy of its data.', 'Download it again to get the newest covers.'); }
     else if (row?.action === 'rescan') { value.textContent = 'Local images'; lines.push('Looks again for cover images saved next to your games.'); }
   }
   content.querySelector('.setting-description').textContent = lines.join('\n');
@@ -105,27 +106,31 @@ async function openCoverSource(source) {
 async function activateCover() {
   const row = coverRows()[selected]; if (!row) return;
   if (row.action === 'back') return coverBack();
-  if (row.action === 'mode') return openChoice({ title: 'Source for the automatic download', text: 'LaunchBox needs its data downloaded once. It only takes a cover when the whole game name matches.', options: AUTO_MODES, current: cm.mode, onPick: value => { cm.mode = value; renderCover(); selected = 1; highlight(); } });
+  if (row.action === 'mode') return openChoice({ title: 'Source for the automatic download', text: 'LaunchBox needs its data downloaded once. It only takes a cover when the whole game name matches.', options: AUTO_MODES, current: cm.mode, onPick: value => { cm.mode = value; renderCover(0); } });
   busy = true;
   try {
     if (row.action === 'local') { const games = await api.chooseCoverFile(cm.context.game.id); if (games) { gamesList = games; renderCarousel(); errorDisplay.textContent = 'Cover changed.'; } }
     else if (row.action === 'source') await openCoverSource(row.source);
     else if (row.action === 'prepare') {
       errorDisplay.textContent = `Downloading ${row.source.label} data…`; await api.prepareCoverSource(row.source.id); await refreshCoverSources();
-      if (cm.stage === 'bulk') { renderCover(); errorDisplay.textContent = `${row.source.label} data ready.`; }
+      if (cm.stage === 'bulk') { renderCover(selected); errorDisplay.textContent = `${row.source.label} data ready.`; }
       else { await openCoverSource(coverSourceInfo(row.source.id)); errorDisplay.textContent = `${row.source.label} data ready.`; }
     } else if (row.action === 'game') {
       errorDisplay.textContent = 'Loading pictures…'; cm.pictures = await api.coverPictures(cm.context.game.id, cm.source.id, row.game.key); cm.game = row.game; cm.stage = 'pictures'; renderCover(); errorDisplay.textContent = '';
     } else if (row.action === 'use') {
       errorDisplay.textContent = 'Downloading cover…'; gamesList = await api.applyCover(cm.context.game.id, cm.source.id, cm.game.key, row.picture.key); renderCarousel(); errorDisplay.textContent = 'Cover changed.';
     } else if (row.action === 'auto' || row.action === 'auto-all') {
-      errorDisplay.textContent = 'Downloading covers…'; const result = await api.autoCovers(cm.mode, row.action === 'auto-all'); gamesList = result.games; renderCarousel(); renderCover(0);
+      errorDisplay.textContent = 'Downloading covers…'; const result = await api.autoCovers(cm.mode, row.action === 'auto-all'); gamesList = result.games; renderCarousel(); renderCover(selected);
       errorDisplay.textContent = `${result.downloaded} cover${result.downloaded === 1 ? '' : 's'} downloaded${result.missing ? ` · ${result.missing} not found` : ''}.`;
     } else if (row.action === 'rescan') { gamesList = await api.rescanCovers(); renderCarousel(); renderCover(selected); status('Local cover images rescanned.'); }
   } catch (error) { errorDisplay.textContent = error.message; } finally { busy = false; }
 }
+const coverProgressText = progress => progress.kind === 'auto' ? `Downloading covers… ${progress.done} of ${progress.total}`
+  : progress.received >= progress.total ? 'Reading the data… (a few seconds)' : `Downloading data… ${Math.floor(progress.received / progress.total * 100)}%`;
+// wizardCoverNote: set while the Install Wizard downloads covers by itself; it shows the progress on its own card.
+let wizardCoverNote = null;
 function coverProgress(progress) {
-  if (mode !== 'covers' || !busy || !progress.total) return;
-  if (progress.kind === 'auto') errorDisplay.textContent = `Downloading covers… ${progress.done} of ${progress.total}`;
-  else errorDisplay.textContent = progress.received >= progress.total ? 'Reading the data… (a few seconds)' : `Downloading data… ${Math.floor(progress.received / progress.total * 100)}%`;
+  if (!busy || !progress.total) return;
+  if (wizardCoverNote) return wizardCoverNote(coverProgressText(progress));
+  if (mode === 'covers') errorDisplay.textContent = coverProgressText(progress);
 }

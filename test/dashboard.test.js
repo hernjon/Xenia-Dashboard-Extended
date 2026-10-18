@@ -501,24 +501,30 @@ test('the Updates screen offers the right rows for each situation and never swit
   const set = (view, latest = {}) => run(`updatesView=${JSON.stringify(view)};updatesLatest=${JSON.stringify(latest)};updatesChannel='edge'`);
 
   set(status(edge()));
-  assert.deepEqual(rows(), ['Check for updates', 'Install Xenia Edge', 'Use my own Xenia…', 'Return to dashboard']);
+  assert.deepEqual(rows(), ['Install Xenia Edge', 'Use my own Xenia…', 'Return to dashboard'], 'a first install just installs: nothing to check yet');
   set(status(edge()), { edge: { tag: 'new1111' } });
-  assert.deepEqual(rows(), ['Check for updates', 'Install new1111', 'Use my own Xenia…', 'Return to dashboard']);
+  assert.deepEqual(rows(), ['Install new1111', 'Use my own Xenia…', 'Return to dashboard']);
   set(status(edge()), { edge: { tag: 'new1111', current_tag: 'new1111' } });
-  assert.deepEqual(rows(), ['Check for updates', 'Up to date ✓', 'Use my own Xenia…', 'Return to dashboard'], 'your own Xenia is already the latest build: nothing to install');
+  assert.deepEqual(rows(), ['Up to date ✓', 'Use my own Xenia…', 'Return to dashboard'], 'your own Xenia is already the latest build: nothing to install');
   set(status(edge()), { edge: { tag: 'new1111', current_tag: 'old0000' } });
-  assert.deepEqual(rows(), ['Check for updates', 'Install new1111', 'Use my own Xenia…', 'Return to dashboard'], 'your own Xenia is an older build: offer a managed copy');
+  assert.deepEqual(rows(), ['Install new1111', 'Use my own Xenia…', 'Return to dashboard'], 'your own Xenia is an older build: offer a managed copy');
+  set(status(edge({ installed: { tag: 'old0000' } })));
+  assert.deepEqual(rows(), ['Check for updates', 'Use it in Xenia Dashboard', 'Use my own Xenia…', 'Return to dashboard'], 'installed and not checked yet: only Check for updates, no Update row');
   set(status(edge({ installed: { tag: 'old0000', published_at: '2026-10-01' }, previous: { tag: 'older99' } })), { edge: { tag: 'new1111' } });
-  assert.deepEqual(rows(), ['Check for updates', 'Update to new1111', 'Use it in Xenia Dashboard', 'Go back to older99', 'Use my own Xenia…', 'Return to dashboard']);
+  assert.deepEqual(rows(), ['Update to new1111', 'Use it in Xenia Dashboard', 'Go back to older99', 'Use my own Xenia…', 'Return to dashboard'], 'no Check button: the screen checks by itself and one row says where things stand');
   set(status(edge({ installed: { tag: 'new1111' }, in_use: true })), { edge: { tag: 'new1111' } });
-  assert.deepEqual(rows(), ['Check for updates', 'Up to date ✓', 'Use my own Xenia…', 'Return to dashboard'], 'nothing to install when current; no "use" when already in use');
+  assert.deepEqual(rows(), ['Up to date ✓', 'Use my own Xenia…', 'Return to dashboard'], 'nothing to install when current; no "use" when already in use');
+  set(status(edge({ installed: { tag: 'old0000' } })), { edge: 'checking' });
+  assert.equal(rows()[0], 'Checking for updates…');
+  set(status(edge({ installed: { tag: 'old0000' } })), { edge: { error: 'offline' } });
+  assert.equal(rows()[0], 'Could not check · try again', 'a failed check can be tried again with A');
   set({ ...status(edge({ supported: false })) });
   assert.deepEqual(rows(), ['Return to dashboard'], 'an unsupported system shows only the way back');
 
   // Installing over an existing Xenia asks first, and keeping the current one is the default.
   set(status(edge({ installed: { tag: 'old0000' } })), { edge: { tag: 'new1111' } });
   next = status(edge({ installed: { tag: 'new1111' }, in_use: false }));
-  run("mode='updates';selected=1");
+  run("mode='updates';selected=0");
   await run('activateUpdate()');
   assert.deepEqual(calls.at(-1), ['install', 'edge']);
   assert.equal(run('mode'), 'dialog'); assert.equal(byId['guide-title'].textContent, 'Use the new version?');
@@ -526,19 +532,24 @@ test('the Updates screen offers the right rows for each situation and never swit
   run("input('a')"); assert.equal(calls.some(([name]) => name === 'use'), false, 'a stray A keeps the Xenia the user already has');
   set(status(edge({ installed: { tag: 'old0000' } })), { edge: { tag: 'new1111' } });
   next = status(edge({ installed: { tag: 'new1111' }, in_use: false }));
-  run("mode='updates';selected=1");
+  run("mode='updates';selected=0");
   await run('activateUpdate()'); run("input('down');input('a')");
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls.at(-1), ['use', 'edge'], 'only an explicit choice switches');
   set(status(edge({ installed: { tag: 'old0000' } })), { edge: { tag: 'new1111' } });
   next = status(edge({ installed: { tag: 'new1111' }, in_use: true }));
-  run("mode='updates';selected=1"); await run('activateUpdate()');
-  assert.deepEqual(rows(), ['Check for updates', 'Up to date ✓', 'Use my own Xenia…', 'Return to dashboard'], 'after installing the latest, the screen says so right away');
+  run("mode='updates';selected=0"); await run('activateUpdate()');
+  assert.deepEqual(rows(), ['Up to date ✓', 'Use my own Xenia…', 'Return to dashboard'], 'after installing the latest, the screen says so right away');
   // A first install (nothing configured) is used by the main process, so no question is asked.
   set(status(edge(), ''));
-  next = status(edge({ installed: { tag: 'new1111' }, in_use: true }), '/data/xenia/edge/xenia_edge_linux.AppImage');
-  run("mode='updates';selected=1"); await run('activateUpdate()');
+  next = { ...status(edge({ installed: { tag: 'new1111' }, in_use: true }), '/data/xenia/edge/xenia_edge_linux.AppImage'), config_ready: true };
+  run("mode='updates';selected=0"); await run('activateUpdate()');
   assert.equal(run('mode'), 'updates'); assert.equal(run('xeniaReady'), true);
+  // ...but a Xenia that has never run has no settings file yet: right after the first install a pop-up says to start it once.
+  set(status(edge(), ''));
+  next = { ...next, config_ready: false };
+  run("mode='updates';selected=0"); await run('activateUpdate()');
+  assert.equal(run('mode'), 'dialog'); assert.equal(byId['guide-title'].textContent, 'Start Xenia once');
 });
 
 test('the game menu lists Game settings, DLC and updates, Patches and Game details by name', async () => {
@@ -582,10 +593,10 @@ test('the cover manager shows the same flow for every source and one bulk screen
   run(`cm.source=cm.sources[0]`); assert.deepEqual(labels(), ['Gears of War (5)', 'Return'], 'an online source has nothing to update');
   run(`cm.stage='pictures';cm.pictures=[{key:'a',label:'Front · North America'},{key:'b',label:'3D box'}]`); assert.deepEqual(labels(), ['Front · North America', '3D box', 'Back']);
   run(`cm.context={game:null,leave(){}};cm.stage='bulk';cm.mode='xenia-manager'`);
-  assert.deepEqual(labels(), ['Download missing covers','Redownload all covers','Source: Xenia Manager', 'Rescan local cover images', 'Return'], 'the bulk screen has no per-game search or replace: that is Change cover');
-  run(`cm.mode='launchbox'`); assert.deepEqual(labels(), ['Download missing covers','Redownload all covers','Source: LaunchBox', 'Download LaunchBox data', 'Rescan local cover images', 'Return'], 'a source that is not downloaded yet offers its download here');
-  run(`cm.mode='both'`); assert.deepEqual(labels(), ['Download missing covers','Redownload all covers','Source: LaunchBox, then Xenia Manager', 'Download LaunchBox data', 'Rescan local cover images', 'Return']);
-  run(`cm.sources[1].ready=true`); assert.deepEqual(labels(), ['Download missing covers','Redownload all covers','Source: LaunchBox, then Xenia Manager', 'Rescan local cover images', 'Return'], 'once downloaded the row goes away');
+  assert.deepEqual(labels(), ['Source: Xenia Manager', 'Download covers', 'Download missing covers', 'Rescan local cover images', 'Return'], 'Source first, the downloads next, the local scan last; no per-game search or replace: that is Change cover');
+  run(`cm.mode='launchbox'`); assert.deepEqual(labels(), ['Source: LaunchBox', 'Update LaunchBox data', 'Download covers', 'Download missing covers', 'Rescan local cover images', 'Return'], 'the data of the source sits right under it');
+  run(`cm.mode='both'`); assert.deepEqual(labels(), ['Source: LaunchBox, then Xenia Manager', 'Update LaunchBox data', 'Download covers', 'Download missing covers', 'Rescan local cover images', 'Return']);
+  run(`cm.sources[1].ready=true`); assert.deepEqual(labels(), ['Source: LaunchBox, then Xenia Manager', 'Update LaunchBox data', 'Download covers', 'Download missing covers', 'Rescan local cover images', 'Return'], 'already downloaded: the row stays, to refresh it');
 });
 test('B steps back through the cover manager one level at a time and leaves to where it was opened from', () => {
   const { run } = guideHarness();

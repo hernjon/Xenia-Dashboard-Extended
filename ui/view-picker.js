@@ -20,7 +20,8 @@
       blurb.textContent = view.blurb;
       line.replaceChildren(...views.map((entry, index) => {
         const mark = el('div', `vp-mark${index === focus ? ' vp-focus' : ''}${entry.name === current ? ' vp-current' : ''}`);
-        mark.append(el('div', 'vp-year', entry.years.slice(0, 4)), el('div', 'vp-dot'), el('div', 'vp-label', entry.label));
+        const track = el('div', 'vp-track'); track.append(el('div', 'vp-dot'));
+        mark.append(el('div', 'vp-year', entry.years.slice(0, 4)), track, el('div', 'vp-label', entry.label));
         mark.addEventListener('click', () => { focus = index; draw(); onFocus?.(views[focus]); onChoose(entry.name); });
         return mark;
       }));

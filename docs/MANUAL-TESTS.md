@@ -264,9 +264,10 @@ Agora existe **um** gerenciador de capas, com o mesmo fluxo para todas as fontes
 - [ ] **Xenia Manager covers**: procura pelo nome do jogo, mostra os jogos parecidos, depois a imagem (**Box art**) com **prévia** à direita; **A** troca só a capa desse jogo. (Antes não tinha prévia.)
 - [ ] **LaunchBox covers**: igual (Front, 3D box, Fan art…), com download único dos dados na primeira vez.
 - [ ] Trocar a capa de um jogo que **já tem capa** (baixada ou do computador) funciona; trocar de novo também.
-- [ ] **Dashboard Settings › Game covers** agora tem só: **Download missing covers**, **Source: …**, (se a fonte precisa: **Download LaunchBox data**), **Rescan local cover images** e Return. Sumiram *Search covers one by one* e *Replace a downloaded cover* — isso agora é o Change cover de cada jogo.
+- [ ] **Dashboard Settings › Game covers** tem, nesta ordem: **Source: …**, **Update … data** (uma por fonte que baixa dados), **Download covers** (todas), **Download missing covers**, **Rescan local cover images** e Return. Sumiram *Search covers one by one* e *Replace a downloaded cover* — isso agora é o Change cover de cada jogo.
 - [ ] **Source:** abre o menu (LaunchBox / LaunchBox, then Xenia Manager / Xenia Manager). **Download missing covers** mostra "Downloading covers… N of M" e termina com "N covers downloaded · M not found". Capas que já existem não mudam.
-- [ ] Com LaunchBox escolhido e os dados ainda não baixados, a linha **Download LaunchBox data** aparece na própria tela e o botão de baixar capas avisa para baixar antes.
+- [ ] Com LaunchBox escolhido, a linha **Update LaunchBox data** fica logo abaixo de **Source**, baixada ou não; se os dados ainda não foram baixados, baixar capas avisa para atualizá-los antes.
+- [ ] **Install Wizard › Download covers** faz tudo dentro do wizard: baixa os dados da fonte (se faltam), depois as capas dos jogos sem capa, mostrando o progresso no próprio cartão, e termina com **Continue**. Sem rede: mostra o erro com **Try again** e **Skip this step**.
 
 # Testes da 1.0.0 (Install Wizard e View)
 
@@ -282,3 +283,19 @@ Para uma primeira execução de verdade, mova `~/.config/NXE/library.json` (ou a
 - [ ] Instalação que já estava configurada (com Xenia e pastas): nunca abre o wizard sozinho.
 - [ ] *Dashboard Settings › Install Wizard* (pede o PIN) refaz o fluxo começando pela view atual marcada com ✓; com Xenia já instalado o passo mostra "Change Xenia".
 - [ ] *Dashboard Settings › View* mostra a mesma linha do tempo no painel da view em uso; A aplica, B volta; se a animação de abertura estava fixa em outra view, pergunta se deve seguir a nova.
+
+# Testes da 1.1.0 (modo janela, teclado, capas e primeira execução)
+
+Para ver como um usuário novo, sem tocar nos seus dados: abra o app com uma pasta pessoal vazia (por exemplo `HOME=/tmp/novo-usuario ./xenia-dashboard`).
+
+- [ ] *Dashboard Settings › View* tem a linha **Window: Fullscreen**; A abre o menu e **Windowed** troca na hora, sem fechar o app, sem intro e na mesma tela. A janela tem barra de título, abre em 1280×720 e não encolhe abaixo de 960×540.
+- [ ] **Alt + Enter** alterna entre tela cheia e janela em qualquer tela, sem PIN; durante um jogo não faz nada. A linha *Window* do menu *View* acompanha.
+- [ ] A janela volta ao tamanho e à posição em que estava ao voltar de tela cheia e ao reabrir o app.
+- [ ] Esticar a janela em qualquer proporção: tudo acompanha; os botões A/B/X/Y ficam redondos em todas as views; na Blades os nomes das blades à direita ficam centrados nas faixas, em tela cheia e em janela estreita.
+- [ ] Teclado: **W A S D** movem como as setas, **Q / E** trocam de seção (LT / RT), **Enter** é A e **Esc** é B. Digitando um PIN, um texto ou uma busca, essas letras só escrevem.
+- [ ] **Game covers** na ordem: Source, Update … data, Download covers, Download missing covers, Rescan, Return. No Install Wizard, **Download covers** faz tudo no próprio cartão (dados da fonte, depois as capas), mostra o progresso e termina em **Continue**; sem rede mostra o erro com **Try again** e **Skip this step**.
+- [ ] Sem Xenia configurado (passo pulado no wizard): *Xenia Settings › System / Profiles / Advanced* abre a janela **Xenia is not set up** com **Set up Xenia** (vai para o Updates) e **Not now**. Nenhuma tela de PIN aparece numa instalação sem PIN.
+- [ ] Logo depois de instalar um Xenia que ainda não rodou, abre a janela **Start Xenia once**; abrir Profiles/Advanced antes de rodar o Xenia mostra a mesma janela. Depois de rodar o Xenia uma vez, nada disso aparece.
+- [ ] *Xenia Settings › Updates*: checa sozinho ao abrir e ao trocar de channel; não há botão *Check for updates*. A linha abaixo de *Channel* diz **Checking for updates…**, **Up to date ✓** (A checa de novo), **Update to …**, **Install …** (primeira instalação) ou **Could not check · try again**.
+- [ ] A linha do tempo do seletor de View (wizard e *View*) tem os círculos alinhados na linha, o do foco maior e centralizado, e os nomes na mesma altura.
+
