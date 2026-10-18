@@ -119,7 +119,9 @@ async function updatesStatus(){
     const executable=supported?xeniaReleases.executablePath(installsRoot(),id,platform):null;
     channels.push({id,label:info.label,supported,installed:state.current,previous:state.previous,executable,in_use:!!executable&&!!library.xenia_executable&&path.resolve(library.xenia_executable)===path.resolve(executable)});
   }
-  return {platform,configured:library.xenia_executable||'',channels,install_root:installsRoot(),install_is_default:!library.xenia_install_dir};
+  // Xenia writes its settings file the first time it runs; until then the dashboard cannot read or change them.
+  let config_ready=false;try{config_ready=!!library.xenia_executable&&existsSync(xeniaLocation().file);}catch{/* no readable location yet */}
+  return {platform,configured:library.xenia_executable||'',config_ready,channels,install_root:installsRoot(),install_is_default:!library.xenia_install_dir};
 }
 // DLC and title updates found next to the ROMs. The screen can only ask to install a path that is in this list
 // and belongs to the chosen game; the destination is then worked out from the package's own header.
@@ -184,7 +186,10 @@ const soundState=view=>{const legacy=view.audio?.muted===true;return {music:type
 const bootChoice=()=>{const value=library?.boot_animation;return value===false||value==='off'?'off':typeof value==='string'&&/^[a-z][a-z0-9-]{0,30}$/.test(value)&&value!=='theme'?value:'theme';};
 // How long a notification stays on screen (seconds); 0 means notifications are off. Five unless the user chose otherwise.
 const noticeSeconds=()=>{const value=library?.notice_seconds;return typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=5&&Number.isInteger(value*2)?value:5;};
-const themeState=theme=>{const view=(themeProvider()?.view||nxe.publicTheme)(theme);return {...view,audio:{...view.audio,volume:typeof library?.volume==='number'?library.volume:view.audio?.volume??.5},skin:skinName(),animations:ANIMATION_MODES.includes(library?.animations)?library.animations:'on',boot_animation:bootChoice(),notice_seconds:noticeSeconds(),sound:soundState(view)};};
+// Fullscreen (the console way, kiosk) or a normal, resizable window. The window always has its frame (a fullscreen window
+// hides it), so the two modes switch live, with no restart. A windowed window comes back at the size and place it was left.
+const windowMode=()=>library?.window_mode==='windowed'?'windowed':'fullscreen';
+const themeState=theme=>{const view=(themeProvider()?.view||nxe.publicTheme)(theme);return {...view,audio:{...view.audio,volume:typeof library?.volume==='number'?library.volume:view.audio?.volume??.5},skin:skinName(),animations:ANIMATION_MODES.includes(library?.animations)?library.animations:'on',boot_animation:bootChoice(),notice_seconds:noticeSeconds(),window_mode:windowMode(),sound:soundState(view)};};
 // Admin sessions are scoped: '*' (Admin button / Start) covers everything, 'xenia' and 'dashboard'
 // (a section's own tiles) cover only that section's IPC. Each lasts five minutes.
 const SECTION_IDS=['xenia','dashboard'];
@@ -203,10 +208,24 @@ function publicGames() { return groupGames(library.games).map(g=>{
   return {id:g.id,title:g.title,...(g.title_id?{title_id:g.title_id}:{}),uses_fallback_art:!cover,cover_art_path:cover,
     ...(g.discs?{discs:g.discs.map(d=>({id:d.id,number:d.disc_number,title:`Disc ${d.disc_number}`,uses_fallback_art:!cover,cover_art_path:cover}))}:{})};
 }); }
+const validBounds=b=>b&&['x','y','width','height'].every(k=>Number.isInteger(b[k]))&&b.width>=960&&b.height>=540&&b.width<=16384&&b.height<=16384;
+const windowedBounds=()=>validBounds(library?.window_bounds)?library.window_bounds:{width:1280,height:720};
+async function setWindowMode(mode){
+  if(mode===windowMode()&&win&&!win.isDestroyed())return;
+  if(mode==='windowed'){} else if(win&&!win.isDestroyed()&&windowMode()==='windowed'&&!win.isFullScreen())library={...library,window_bounds:win.getBounds()};
+  library={...library,window_mode:mode};await scanner.saveLibrary(libraryFile,library);
+  if(!win||win.isDestroyed())return;
+  if(mode==='fullscreen'){win.setKiosk(true);win.setFullScreen(true);shortcuts();}
+  else{
+    win.setKiosk(false);win.setFullScreen(false);globalShortcut.unregister('Alt+Tab');
+    const bounds=windowedBounds();win.setBounds(bounds);if(!('x' in bounds))win.center();
+  }
+  win.focus();win.webContents.send('window:mode',mode);
+}
 function shortcuts() {
   // Close, devtools and fullscreen shortcuts are blocked locally by the window.
   // Windows reserves task switching and the Windows key; Super alone is not an accelerator.
-  if (process.platform === 'linux' && !globalShortcut.isRegistered('Alt+Tab')) {
+  if (windowMode() === 'fullscreen' && process.platform === 'linux' && !globalShortcut.isRegistered('Alt+Tab')) {
     try { globalShortcut.register('Alt+Tab', () => {}); } catch { /* Desktop may reserve it. */ }
   }
   if (!shortcutNoticeShown) {
@@ -236,7 +255,7 @@ async function checkXeniaUpdate() {
 function recover(state) {
   child = null;
   if (!win || win.isDestroyed()) return;
-  win.restore(); win.show(); win.setKiosk(true); win.setFullScreen(true); win.focus(); shortcuts();
+  win.restore(); win.show(); if (windowMode() === 'fullscreen') { win.setKiosk(true); win.setFullScreen(true); shortcuts(); } win.focus();
   win.webContents.send('game:state', state);
 }
 function handle(channel, fn) {
@@ -397,6 +416,12 @@ else {
     handle('admin:boot-animation',choice=>serialized(async()=>{
       requireAdmin('dashboard');if(typeof choice!=='string'||!/^[a-z][a-z0-9-]{0,30}$/.test(choice))throw Error('Invalid boot animation setting');
       const next={...library,boot_animation:choice};await scanner.saveLibrary(libraryFile,next);library=next;return themeState(importedTheme);
+    }));
+    // Fullscreen or windowed, applied at once. Not while a game runs.
+    handle('admin:window-mode',mode=>serialized(async()=>{
+      requireAdmin('dashboard');if(!['fullscreen','windowed'].includes(mode))throw Error('Invalid window mode');
+      if(child||launchPending)throw Error('Close the running game first.');
+      await setWindowMode(mode);return themeState(importedTheme);
     }));
     handle('admin:security',()=>{requireAdmin('dashboard');return {admin_pin_required:library.admin_pin_required!==false,locked_sections:lockedSections()};});
     handle('admin:set-pin',pin=>serialized(async()=>{
@@ -658,11 +683,13 @@ else {
       return {games:publicGames(),downloaded:files.size,missing:wanted.length-files.size};
     }));
     handle('admin:exit', () => { requireAdmin('dashboard'); allowQuit = true; app.quit(); });
-    win = new BrowserWindow({ icon: path.join(ROOT, 'assets', 'icon.png'), kiosk: true, fullscreen: true, frame: false, autoHideMenuBar: true, backgroundColor: '#07090c', webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, devTools: false } });
+    const fullscreen = windowMode() === 'fullscreen';
+    win = new BrowserWindow({ icon: path.join(ROOT, 'assets', 'icon.png'), title: 'Xenia Dashboard', kiosk: fullscreen, fullscreen, minWidth: 960, minHeight: 540, ...(fullscreen ? {} : windowedBounds()), autoHideMenuBar: true, backgroundColor: '#07090c', webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, devTools: false } });
     win.setMenu(null);
     // Alt+F4 / the window manager's close. With no PIN guarding the Dashboard it simply closes; otherwise it
     // opens the exit window, which asks for the Dashboard session. A running game is left alone.
     win.on('close', event => {
+      if (windowMode() === 'windowed' && !win.isFullScreen() && !win.isMinimized()) { library = { ...library, window_bounds: win.getBounds() }; scanner.saveLibrary(libraryFile, library).catch(() => {}); }
       if (allowQuit) return;
       event.preventDefault();
       if (child || launchPending) return;
@@ -676,6 +703,12 @@ else {
     win.webContents.on('before-input-event', (event, input) => {
       const admin = adminActive();
       const editShortcut = admin && input.control && !input.alt && !input.meta && ['a', 'c', 'v', 'x', 'z', 'y'].includes(input.key.toLowerCase());
+      // Alt+Enter switches between fullscreen and windowed, with or without a PIN: it only changes the window.
+      if (input.type === 'keyDown' && input.alt && !input.control && !input.meta && input.key === 'Enter') {
+        event.preventDefault();
+        if (!child && !launchPending && !input.isAutoRepeat) setWindowMode(windowMode() === 'windowed' ? 'fullscreen' : 'windowed').catch(error => console.warn('[Xenia Dashboard] Window mode:', error.message));
+        return;
+      }
       if (input.alt || input.meta || (input.control && !editShortcut) || ['F11', 'F12'].includes(input.key)) event.preventDefault();
     });
     win.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {

@@ -11,13 +11,18 @@
 .vp-name { margin-top:1.6vh; font-size:var(--fs-row); font-weight:600; }
 .vp-blurb { margin:.4vh auto 0; max-width:60vw; min-height:2.6em; font-size:var(--fs-text); opacity:.8; }
 .vp-line { position:relative; display:flex; justify-content:space-between; margin:2.4vh auto 0; width:80%; }
-.vp-line::before { content:''; position:absolute; left:6%; right:6%; top:calc(var(--fs-small) * 1.6); height:2px; background:currentColor; opacity:.25; }
+/* The line runs through the middle of every track, so the dots sit on it whatever their size; it starts and ends at the first and last dot. */
 .vp-mark { position:relative; flex:1; display:flex; flex-direction:column; align-items:center; gap:.6vh; opacity:.55; cursor:default; }
 .vp-year { font-size:var(--fs-small); }
-.vp-dot { width:1.6vh; height:1.6vh; border-radius:50%; background:currentColor; opacity:.7; }
+.vp-track { position:relative; align-self:stretch; height:3.2vh; display:flex; align-items:center; justify-content:center; }
+.vp-track::before { content:''; position:absolute; left:0; right:0; top:calc(50% - 1px); height:2px; background:currentColor; opacity:.25; }
+.vp-mark:first-child .vp-track::before { left:50%; }
+.vp-mark:last-child .vp-track::before { right:50%; }
+.vp-dot { position:relative; width:1.6vh; height:1.6vh; border-radius:50%; background:currentColor; opacity:.7; }
 .vp-label { font-size:var(--fs-text); }
 .vp-mark.vp-current .vp-label::after { content:' ✓'; }
 .vp-mark.vp-focus { opacity:1; }
+.vp-mark.vp-focus .vp-track::before { opacity:.14; }
 .vp-mark.vp-focus .vp-dot { width:2.4vh; height:2.4vh; opacity:1; box-shadow:0 0 0 .5vh #ffffff44; }
 .vp-mark.vp-focus .vp-label { font-weight:700; }
 /* Inside Dashboard Settings the picker lives in a panel with less room than the wizard's full screen. */

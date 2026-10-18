@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const { loadDashboard } = require('./helpers/dashboard');
 
-function harness({ firstRun = true, games = [], pinRequired = false } = {}) {
+function harness({ firstRun = true, games = [], pinRequired = false, xeniaError = 'Xenia has not created xenia-edge.config.toml yet. Start any game once, then come back.' } = {}) {
   class Element {
     constructor(t) { this.tagName = t; this.className = ''; this.children = []; this.textContent = ''; this.style = { removeProperty() {}, setProperty() {} }; const classes = new Set(); this.classList = { toggle: (c, on) => { if (on === undefined ? !classes.has(c) : on) classes.add(c); else classes.delete(c); }, add: c => classes.add(c), remove: c => classes.delete(c), contains: c => classes.has(c) }; }
     append(...c) { this.children.push(...c); } replaceChildren(...c) { this.children = c; } setAttribute() {} addEventListener() {} cloneNode() { return new Element(this.tagName); } querySelectorAll() { return []; } scrollIntoView() {}
@@ -16,6 +16,9 @@ function harness({ firstRun = true, games = [], pinRequired = false } = {}) {
   const api = {
     wizardState: async () => ({ first_run: firstRun }), wizardBegin: async () => { calls.push('begin'); return { session: firstRun }; }, wizardEnd: async () => { calls.push('end'); return true; },
     setSkin: async name => { calls.push(['skin', name]); return { ...state, skin: name }; }, getAdminAccess: async () => ({ pin_required: pinRequired }), unlockAdmin: async () => true, lockAdmin: async () => { locks.push('lock'); },
+    coverSources: async () => [{ id: 'launchbox', label: 'LaunchBox', needs_download: true, ready: false }, { id: 'xenia-manager', label: 'Xenia Manager', needs_download: false, ready: true }],
+    prepareCoverSource: async id => { calls.push(['prepare', id]); }, autoCovers: async (mode, all) => { calls.push(['covers', mode, all]); return { games: [{ id: 'g', title: 'G' }], downloaded: 3, missing: 1 }; },
+    getXeniaSettings: async () => { throw new Error(xeniaError); },
     getLibrary: async () => ({ games, xenia_ready: false }), getSettings: async () => ({ locked_sections: [], rom_directories: [], games: [] })
   };
   const context = vm.createContext({ window: { electronAPI: api, addEventListener() {}, matchMedia: () => ({ matches: false }), uiSounds: { play() {}, configure() {} } }, document, requestAnimationFrame() {}, navigator: {}, setTimeout, clearTimeout });
@@ -88,6 +91,21 @@ test('the covers step appears only when the folders step found games', async () 
   assert.match(byId['guide-text'].textContent, /step 4 of 4/);
 });
 
+test('the covers step does it all inside the wizard: data, then covers, then Continue', async () => {
+  const { run, byId, calls, settle } = harness();
+  run('wizardPending=true;maybeStartWizard()'); await settle();
+  run("input('right');input('a')"); await settle();
+  run("gamesList=[{id:'g',title:'G'}]");
+  run("input('down');input('a')"); run("input('down');input('a')");       // skip Xenia and folders
+  run("input('a')"); await settle();                                      // Download covers
+  assert.deepEqual(calls.slice(-2), [['prepare', 'launchbox'], ['covers', 'launchbox', false]], 'the data first, then only the games without a cover');
+  assert.equal(run('mode'), 'dialog', 'it never left the wizard for the covers screen');
+  assert.equal(byId['guide-title'].textContent, 'Covers');
+  assert.match(byId['guide-text'].textContent, /3 covers downloaded · 1 not found/);
+  run("input('a')"); await settle();                                      // Continue: it was the last step
+  assert.equal(calls.at(-1), 'end');
+});
+
 test('SELECT / the Guide never opens over the wizard, and the wizard stays in charge', async () => {
   const { run, byId, settle } = harness();
   run('wizardPending=true;maybeStartWizard()'); await settle();
@@ -132,4 +150,28 @@ test('the wizard keeps the admin session while it runs (a closed screen does not
   assert.deepEqual(locks, [], 'nothing was locked in the middle of the wizard');
   run('wizardRun.skipAll()'); await settle();
   assert.deepEqual(locks, ['lock'], 'a re-run locks once, when it ends');
+});
+
+test('a Xenia that never ran: with no PIN the reason shows on the library, not on a PIN pad', async () => {
+  const { run, byId, settle } = harness();
+  run("unlockSection='xenia';entryAfterUnlock=()=>openXenia(null);openPin()"); await settle();
+  assert.equal(run('mode'), 'dialog', 'no PIN pad: a window says what to do');
+  assert.equal(byId['guide-title'].textContent, 'Start Xenia once');
+});
+
+test('with no Xenia set up, opening its settings offers to set one up, and the answer goes to the Updates screen', async () => {
+  const { run, byId, settle } = harness({ xeniaError: "Error invoking remote method 'xenia:settings': Error: Install or choose a Xenia in Xenia Settings › Updates first." });
+  run("unlockSection='xenia';entryAfterUnlock=()=>openXenia(null);openPin()"); await settle();
+  assert.equal(byId['guide-title'].textContent, 'Xenia is not set up');
+  assert.doesNotMatch(byId['guide-text'].textContent, /Error invoking/);
+  assert.deepEqual(byId['guide-buttons'].children.map(b => b.textContent), ['Set up Xenia', 'Not now']);
+});
+
+test('right after installing a Xenia that has not run yet, a pop-up says to start it once; never when its settings exist', async () => {
+  const { run, byId, settle } = harness();
+  run("updatesView={configured:'/x/xenia',config_ready:true};explainFirstRun()"); await settle(); await new Promise(r => setTimeout(r, 5));
+  assert.notEqual(byId['guide-title']?.textContent, 'Start Xenia once', 'settings exist: nothing to say');
+  run("updatesView={configured:'/x/xenia',config_ready:false};explainFirstRun()"); await settle(); await new Promise(r => setTimeout(r, 5));
+  assert.equal(byId['guide-title'].textContent, 'Start Xenia once');
+  assert.match(byId['guide-text'].textContent, /Profiles or Advanced/);
 });

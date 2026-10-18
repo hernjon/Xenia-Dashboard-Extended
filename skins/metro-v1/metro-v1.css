@@ -31,7 +31,7 @@ body { background:#2b2d2f; font-family:'Segoe UI Light','Segoe UI','Selawik','Op
 /* Button legend, bottom left. */
 .mt-legend { position:absolute; left:10.9vw; top:87.6vh; display:flex; gap:2.2vw; align-items:center; }
 .mt-key { display:flex; align-items:center; gap:.7vw; font-size:2.6vh; color:#fff; text-shadow:0 .1vh .3vh #0000008c; white-space:nowrap; }
-.mt-key img { width:4.6vh; height:4.6vh; margin:-.6vh -.3vw; }
+.mt-key img { flex:none; object-fit:contain; width:4.6vh; height:4.6vh; margin:-.6vh -.3vw; }
 
 /* Screens: the grid, pivot and caption step aside; the background stays. */
 .modal-open .mt-grid,.modal-open .mt-pivot,.modal-open .mt-caption,.modal-open .mt-legend { opacity:0; }

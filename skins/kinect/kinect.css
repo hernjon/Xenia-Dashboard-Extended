@@ -60,7 +60,7 @@ body.reduce-motion .kn-tile { transition:none; }
 /* Button legend (bottom left) and the orb (bottom right). */
 .kn-legend { position:absolute; left:11.33vw; top:87.6vh; display:flex; gap:2.2vw; align-items:center; }
 .kn-key { display:flex; align-items:center; gap:.7vw; font-size:2.6vh; color:#fff; text-shadow:0 .1vh .3vh #0000008c; white-space:nowrap; }
-.kn-key img { width:4.6vh; height:4.6vh; margin:-.6vh -.3vw; }
+.kn-key img { flex:none; object-fit:contain; width:4.6vh; height:4.6vh; margin:-.6vh -.3vw; }
 .kn-orb { position:absolute; left:calc(89.84vw - 6.2vh); top:81.7vh; width:12.4vh; height:12.4vh; }
 .kn-orb img { width:100%; height:100%; display:block; }
 .kn-orb::after { content:''; position:absolute; left:30%; right:30%; top:84%; height:10%; border-radius:50%; background:radial-gradient(ellipse at center,#0000003a,transparent 70%); }

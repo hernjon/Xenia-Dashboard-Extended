@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   takeNotices: () => ipcRenderer.invoke('notices:take'),
   onNotice: callback => { const listener = (_event, notice) => callback(notice); ipcRenderer.on('notice', listener); return () => ipcRenderer.removeListener('notice', listener); },
   setSound: (kind, value) => ipcRenderer.invoke('admin:sound', kind, value),
+  setWindowMode: mode => ipcRenderer.invoke('admin:window-mode', mode),
+  onWindowMode: callback => { const listener = (_event, mode) => callback(mode); ipcRenderer.on('window:mode', listener); return () => ipcRenderer.removeListener('window:mode', listener); },
   setBootAnimation: choice => ipcRenderer.invoke('admin:boot-animation', choice),
   launchXeniaGame: id => ipcRenderer.invoke('game:launch', id),
   unlockAdmin: (pin, section) => ipcRenderer.invoke('admin:unlock', pin, section ?? null),
