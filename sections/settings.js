@@ -30,6 +30,7 @@
         tile('covers', 'Game covers', 'Download, replace and rescan artwork', 'camera'),
         tile('security', 'PIN and locks', 'PIN protection and which sections ask for it', 'family'),
         tile('wizard', 'Install Wizard', 'Set up the view, Xenia, your folders and covers again', 'settings'),
+        tile('updates', 'Updates', 'The dashboard and Xenia: notify or update by themselves', 'download'),
         tile('exit', 'Exit to desktop', 'Close Xenia Dashboard', 'desktop')
       ],
       caption: (items, index) => caption('Dashboard Settings', items, index),

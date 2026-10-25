@@ -9,7 +9,7 @@ async function readAsset(file,root,extensions,maxBytes=16*1024*1024){
   const bytes=await fs.readFile(realFile);if(bytes.length>maxBytes)throw Error('Local asset exceeds limit');
   return {bytes,mime:MIME[ext]};
 }
-const APP_FILES=new Set(['index.html','ui/renderer.js','ui/covers-ui.js','dashboard/sections.js','dashboard/navigation.js','dashboard/skin.js','skins/nxe/nxe-skin.js','sections/library.js','sections/settings.js','skins/nxe/nxe.css','skins/blades/blades-skin.js','skins/blades/blades.css','skins/kinect/kinect-skin.js','skins/kinect/kinect.css','skins/metro-v1/metro-v1-skin.js','skins/metro-v1/metro-v1.css','ui/notice.js','ui/view-picker.js','ui/wizard.js','ui/wizard.css','ui/notice.css','ui/ui-sounds.js','ui/ui-music.js','assets/controller-buttons.jpg']);
+const APP_FILES=new Set(['index.html','ui/renderer.js','ui/covers-ui.js','ui/updates-ui.js','dashboard/sections.js','dashboard/navigation.js','dashboard/skin.js','skins/nxe/nxe-skin.js','sections/library.js','sections/settings.js','skins/nxe/nxe.css','skins/blades/blades-skin.js','skins/blades/blades.css','skins/kinect/kinect-skin.js','skins/kinect/kinect.css','skins/metro-v1/metro-v1-skin.js','skins/metro-v1/metro-v1.css','ui/notice.js','ui/view-picker.js','ui/wizard.js','ui/wizard.css','ui/notice.css','ui/ui-sounds.js','ui/ui-music.js','assets/controller-buttons.jpg']);
 // A skin's own pictures, sounds, font and boot video live in skins/<name>/assets/ (one sub-folder deep at most).
 const SKIN_ASSET=/^skins\/[a-z][a-z0-9-]*\/assets\/(?:[a-z0-9-]+\/)?[\w.-]+\.(?:png|jpg|wav|ttf|webm)$/;
 // The previews of the views (the timeline in the install wizard and in Dashboard Settings › View).

@@ -9,7 +9,7 @@ const root = path.join(__dirname, '..');
 // the verb ("how it looks", "looks like", "look at") is fine.
 const FILES = [
   'README.md', 'docs/ARCHITECTURE.md', 'docs/NXE-ASSETS.md', 'docs/ROADMAP.md',
-  'index.html', 'sections/settings.js', 'ui/renderer.js', 'ui/notice.js', 'ui/ui-sounds.js', 'ui/covers-ui.js', 'ui/notice.css', 'ui/wizard.js', 'ui/wizard.css', 'ui/view-picker.js',
+  'index.html', 'sections/settings.js', 'ui/renderer.js', 'ui/notice.js', 'ui/ui-sounds.js', 'ui/covers-ui.js', 'ui/updates-ui.js', 'ui/notice.css', 'ui/wizard.js', 'ui/wizard.css', 'ui/view-picker.js',
   'src/main.js', 'src/nxe.js', 'dashboard/skin.js', 'dashboard/navigation.js', 'dashboard/sections.js',
   'skins/blades/blades-skin.js', 'skins/nxe/nxe-skin.js', 'skins/kinect/kinect-skin.js', 'skins/metro-v1/metro-v1-skin.js'
 ];

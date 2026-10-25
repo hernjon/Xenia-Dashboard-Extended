@@ -238,6 +238,7 @@ async function activate() {
   window.uiSounds?.play(mode==='pin'?(pinKeys[selected]==='Back'?'left':'right'):'select');
   if(mode==='themes')return activateTheme();
   if(mode==='sound')return activateSound();
+  if(mode==='app-updates')return activateAppUpdates();
   if(mode==='xenia-home'){
     const categories=homeCategories(),offset=homeOffset(),index=selected-offset;
     if(offset&&selected===0)return openOptimized();
@@ -513,6 +514,7 @@ const DASHBOARD_ENTRIES={
   'dashboard:themes':()=>renderThemes(),
   'dashboard:wizard':()=>startWizard(true),
   'dashboard:sound':()=>renderSound(),
+  'dashboard:updates':()=>openAppUpdates(),
   'dashboard:covers':()=>openCoverManager({game:null,leave:returnSettings}),
   'dashboard:security':async()=>{settings=await api.getSecurity();settings.new_pin='';showSettingsRows(SECURITY_ROWS,'PIN and locks',SETTINGS_HELP);}
 };
@@ -985,10 +987,11 @@ function input(action) {
   if(mode==='wizard-view'||mode==='views'){viewPicker?.input(action);return;}
   if(mode==='library')return libraryInput(action);
   if(mode==='sound'&&(action==='left'||action==='right')&&themeRows[selected]?.key==='notice')return stepNotice(action==='left'?-.5:.5);
+  if(mode==='app-updates'&&(action==='left'||action==='right'))return stepAppUpdateMode(action==='left'?-1:1);
   if(mode==='xenia-items'&&(action==='left'||action==='right'))return adjustXenia(action==='left'?-1:1);
   if(mode==='xenia-items'&&action==='x')return resetXenia();
   if(mode==='game-info'&&(action==='up'||action==='down')){content.querySelector('.game-details')?.scrollBy({top:action==='up'?-90:90,behavior:'smooth'});return;}
-  if(action==='b'){window.uiSounds?.play('back');if(mode==='keyboard')cancelEdit();else if(xeniaBack())return;else if(mode==='themes'||mode==='sound')returnSettings();else if(mode==='roms')leaveRoms();else closeModal();return;}
+  if(action==='b'){window.uiSounds?.play('back');if(mode==='keyboard')cancelEdit();else if(xeniaBack())return;else if(mode==='themes'||mode==='sound'||mode==='app-updates')returnSettings();else if(mode==='roms')leaveRoms();else closeModal();return;}
   if(action==='a')return activate();
   if(action==='x'){if(mode==='pin'){window.uiSounds?.play('left');pin=pin.slice(0,-1);renderPin();}else if(mode==='keyboard'){editText=editText.slice(0,-1);renderKeyboard();}return;}
   if(action==='y'){if(mode==='pin')submitPin();else if(mode==='keyboard')finishEdit();return;}
