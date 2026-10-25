@@ -26,13 +26,17 @@ function createSelfUpdater({ loadUpdater, log = () => {} }) {
       } catch (error) { log(`update check failed: ${error?.message || error}`); return null; }
     },
     // → true once the file is downloaded and verified (electron-updater checks the checksum), false on any error.
+    // electron-updater registers its install-on-quit handler only if autoInstallOnAppQuit is already true when a download
+    // finishes, so the flag is on during the download and off again right after (also on errors). The handler reads the
+    // flag again at quit time, so installOnQuit() (and the before-quit hook in main.js) stays the real decision.
     async download(onProgress) {
       let u, listener;
       try {
         u = get();
         listener = info => { try { onProgress?.(Math.round(info.percent)); } catch (error) { log(`progress callback failed: ${error?.message || error}`); } };
         u.on('download-progress', listener);
-        await u.downloadUpdate();
+        u.autoInstallOnAppQuit = true;
+        try { await u.downloadUpdate(); } finally { u.autoInstallOnAppQuit = false; }
         return (downloaded = true);
       } catch (error) { log(`update download failed: ${error?.message || error}`); return false; }
       finally { if (u && listener) u.removeListener('download-progress', listener); }
