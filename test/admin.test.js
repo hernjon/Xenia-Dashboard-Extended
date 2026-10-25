@@ -10,21 +10,31 @@ const { EventEmitter } = require('node:events');
 
 async function mainHarness(withTheme=false,coverMode='none',gameExtra={},options={}) {
   const handlers = new Map(), calls = [], events = new Map(), windowEvents = new Map(), windowCalls = [], routes = new Map(), spawnCalls = [], accessCalls = [], chmodCalls = [], mkdirCalls = [], scans = { count: 0 };
+  const appEvents = [], timers = [], saved = [], opened = [], loaded = [];
+  // The dashboard's own updater, faked: what main.js asks of it is recorded; the test sets what it answers.
+  const updater = { created: 0, checks: 0, downloads: 0, latest: null, checkThrows: false, downloadResult: true, gate: null, progress: [50], log: [] };
+  const selfUpdate = { createSelfUpdater: () => { updater.created++; let downloaded = false; return {
+    async check() { updater.checks++; if (updater.checkThrows) throw new Error('offline'); return updater.latest ? { version: updater.latest } : null; },
+    async download(onProgress) { updater.downloads++; for (const value of updater.progress) onProgress(value); downloaded = await (updater.gate || updater.downloadResult); updater.log.push(['downloaded', downloaded]); return downloaded; },
+    installNow() { updater.log.push(['installNow']); },
+    installOnQuit(enabled) { updater.log.push(['installOnQuit', enabled, downloaded]); }
+  }; } };
   const emulator = new EventEmitter();
   const game = { id: 'test-game', title: 'Test Game', rom_path: 'C:\\Games\\Test.iso', ...gameExtra };
   if(coverMode!=='none'){game.uses_fallback_art=false;game.cover_art_path=coverMode==='cached'?path.join(__dirname,'covers','test-game.jpg'):path.join(__dirname,'sidecar.jpg');}
   let now = 1000000, window;
   let dialogResult = { canceled: false, filePaths: ['C:\\Games\\Xbox360'] };
   const electron = {
-    app: { setName(){},setPath(){},commandLine:{appendSwitch(){}},requestSingleInstanceLock: () => true, on() {}, whenReady: () => Promise.resolve(), getPath: name => options.userData && (name === 'userData' ? options.userData : name === 'home' ? path.join(options.userData, 'home') : null) || __dirname, quit() { windowCalls.push(['quit']); } },
+    app: { isPackaged: options.packaged === true, getVersion: () => options.version || '1.3.0', setName(){},setPath(){},commandLine:{appendSwitch(){}},requestSingleInstanceLock: () => true, on(name, fn) { appEvents.push([name, fn]); }, whenReady: () => Promise.resolve(), getPath: name => options.userData && (name === 'userData' ? options.userData : name === 'home' ? path.join(options.userData, 'home') : null) || __dirname, quit() { windowCalls.push(['quit']); } },
     ipcMain: { handle: (name, fn) => handlers.set(name, fn) },
+    shell: { openExternal: async url => { opened.push(url); } },
     globalShortcut: { isRegistered: () => false, register: () => { throw new Error('Unexpected registration on Windows'); }, unregisterAll() {} },
     protocol: { registerSchemesAsPrivileged() {}, handle() {} }, net: {fetch:async (url, init) => routes.has(url) ? routes.get(url)(url, init) : new Response(url.endsWith('games.json')?JSON.stringify([{id:'12345678',title:'Test Game'}]):Buffer.concat([Buffer.from([255,216,255,224]),Buffer.alloc(20)]))},
     nativeImage: { createFromBuffer: () => ({ isEmpty: () => false, getSize: () => ({ width: 10, height: 10 }), toJPEG: () => Buffer.concat([Buffer.from([255, 216, 255, 224]), Buffer.alloc(20, 9)]), toPNG: () => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(20, 9)]) }) },
     dialog: { showOpenDialog: async (_window, options) => { calls.push(options); return typeof dialogResult === 'function' ? dialogResult() : dialogResult; } },
     BrowserWindow: class {
-      constructor() { window = this; this.webContents = { mainFrame: { url: 'nxe-app://dashboard/index.html' }, setWindowOpenHandler() {}, on: (name, fn) => events.set(name, fn), send: (channel, state) => windowCalls.push(channel === 'game:state' ? ['state', state.running] : [channel]), session: { setPermissionRequestHandler() {},setPermissionCheckHandler() {} } }; }
-      setMenu() {} on(name, fn) { windowEvents.set(name, fn); } async loadFile() {} async loadURL() {}
+      constructor() { window = this; this.webContents = { mainFrame: { url: 'nxe-app://dashboard/index.html' }, setWindowOpenHandler() {}, on: (name, fn) => events.set(name, fn), send: (channel, state) => windowCalls.push(channel === 'game:state' ? ['state', state.running] : channel === 'app-update:progress' ? [channel, state] : [channel]), session: { setPermissionRequestHandler() {},setPermissionCheckHandler() {} } }; }
+      setMenu() {} on(name, fn) { windowEvents.set(name, fn); } async loadFile() {} async loadURL(url) { loaded.push(url); }
       isDestroyed() { return false; }
       restore() { windowCalls.push(['restore']); } show() { windowCalls.push(['show']); } focus() { windowCalls.push(['focus']); }
       setKiosk(value) { windowCalls.push(['kiosk', value]); } setFullScreen(value) { windowCalls.push(['fullscreen', value]); }
@@ -33,8 +43,9 @@ async function mainHarness(withTheme=false,coverMode='none',gameExtra={},options
     }
   };
   const context = vm.createContext({
-    require: name => name === './xenia-releases' ? { ...require('../src/xenia-releases'), httpsFetcher: (url, init) => routes.has(url) ? Promise.resolve(routes.get(url)(url, init)) : Promise.reject(new Error(`unrouted ${url}`)) } : name === 'electron' ? electron : name === 'node:child_process' ? { spawn: (...args) => { spawnCalls.push(args); return emulator; } } : name === 'node:fs/promises' ? { access: async file => { accessCalls.push(file); if(file===''||options.missingPaths?.includes(file))throw Object.assign(Error('ENOENT'),{code:'ENOENT'}); },mkdir:async(...args)=>{mkdirCalls.push(args);},writeFile:async()=>{},rename:async()=>{},unlink:async()=>{},readdir:(...args)=>require('node:fs/promises').readdir(...args),stat:(...args)=>require('node:fs/promises').stat(...args),chmod:async(...args)=>{chmodCalls.push(args);if(options.chmodFails)throw Object.assign(Error(`EPERM: operation not permitted, chmod '${args[0]}'`),{code:'EPERM'});} } : name==='./nxe'?{...require('../src/nxe'),loadTheme:async()=>({directory:__dirname,manifest:{version:1,assets:{},backgrounds:[{id:'theme-test',label:'Test'}],inventory:[],sounds:{},notes:[]},selected:'theme-test',audio:{volume:.5,muted:options.legacyMuted===true}})}:name === './scanner' ? { ...scanner, loadLibrary: async () => ({ rom_directory: options.romDirectory ?? '', rom_directories: options.romDirectory ? [options.romDirectory] : [], xenia_executable: options.executable ?? 'C:\\Xenia\\xenia.exe', games: [game], admin_credential: scanner.hashPin('1234'), ...(options.library || {}) }), scanDirectory: async () => [game], scanDirectories: async () => { scans.count++; return [game]; }, saveLibrary: async () => {} } : require(name.startsWith('./') ? '../src/' + name.slice(2) : name),
-    __dirname: path.join(__dirname, '..', 'src'), console: { info() {}, warn() {}, error() {} }, process: { platform: options.platform || 'win32', on() {} }, Date: { now: () => now }, URL, Response
+    require: name => name === './self-update' ? selfUpdate : name === './xenia-releases' ? { ...require('../src/xenia-releases'), httpsFetcher: (url, init) => routes.has(url) ? Promise.resolve(routes.get(url)(url, init)) : Promise.reject(new Error(`unrouted ${url}`)) } : name === 'electron' ? electron : name === 'node:child_process' ? { spawn: (...args) => { spawnCalls.push(args); return emulator; } } : name === 'node:fs/promises' ? { access: async file => { accessCalls.push(file); if(file===''||options.missingPaths?.includes(file))throw Object.assign(Error('ENOENT'),{code:'ENOENT'}); },mkdir:async(...args)=>{mkdirCalls.push(args);},writeFile:async()=>{},rename:async()=>{},unlink:async()=>{},readdir:(...args)=>require('node:fs/promises').readdir(...args),stat:(...args)=>require('node:fs/promises').stat(...args),chmod:async(...args)=>{chmodCalls.push(args);if(options.chmodFails)throw Object.assign(Error(`EPERM: operation not permitted, chmod '${args[0]}'`),{code:'EPERM'});} } : name==='./nxe'?{...require('../src/nxe'),loadTheme:async()=>({directory:__dirname,manifest:{version:1,assets:{},backgrounds:[{id:'theme-test',label:'Test'}],inventory:[],sounds:{},notes:[]},selected:'theme-test',audio:{volume:.5,muted:options.legacyMuted===true}})}:name === './scanner' ? { ...scanner, loadLibrary: async () => ({ rom_directory: options.romDirectory ?? '', rom_directories: options.romDirectory ? [options.romDirectory] : [], xenia_executable: options.executable ?? 'C:\\Xenia\\xenia.exe', games: [game], admin_credential: scanner.hashPin('1234'), ...(options.library || {}) }), scanDirectory: async () => [game], scanDirectories: async () => { scans.count++; return [game]; }, saveLibrary: async (_file, next) => { saved.push(next); } } : require(name.startsWith('./') ? '../src/' + name.slice(2) : name),
+    __dirname: path.join(__dirname, '..', 'src'), console: { info() {}, warn() {}, error() {} }, process: { platform: options.platform || 'win32', env: options.env || {}, on() {} }, Date: { now: () => now }, URL, Response,
+    setTimeout: (fn, ms) => { const timer = { fn, ms, unref() { timer.unrefed = true; return timer; } }; timers.push(timer); return timer; }
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..','src','main.js'), 'utf8'), context);
   // main.js builds the window after several awaits (library, theme, scan); wait for it rather than for one tick.
@@ -42,7 +53,10 @@ async function mainHarness(withTheme=false,coverMode='none',gameExtra={},options
   for (let attempts = 0; !window && attempts < 1000; attempts++) await new Promise(resolve => setTimeout(resolve, 5));
   assert.ok(window, 'main.js never created the window');
   const caller = () => ({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
-  return { calls, events, windowEvents, routes, emulator, windowCalls,spawnCalls,accessCalls,chmodCalls,mkdirCalls,scans,hasHandler:name=>handlers.has(name), invoke: (name, ...args) => handlers.get(name)(caller(), ...args), untrusted: (name, ...args) => handlers.get(name)({ sender: {}, senderFrame: {} }, ...args), setTime: value => { now = value; }, setResult: value => { dialogResult = value; } };
+  return { calls, events, windowEvents, routes, emulator, windowCalls,spawnCalls,accessCalls,chmodCalls,mkdirCalls,scans,updater,timers,saved,opened,loaded,
+    // What the real start does a few seconds after the window loaded: run the timers it set (the update checks).
+    startup: async () => { for (const timer of timers.splice(0)) await timer.fn(); },
+    quit: () => { let prevented = false; for (const [name, fn] of appEvents) if (name === 'before-quit') fn({ preventDefault() { prevented = true; } }); return { prevented }; },hasHandler:name=>handlers.has(name), invoke: (name, ...args) => handlers.get(name)(caller(), ...args), untrusted: (name, ...args) => handlers.get(name)({ sender: {}, senderFrame: {} }, ...args), setTime: value => { now = value; }, setResult: value => { dialogResult = value; } };
 }
 test('PIN protection defaults on, can be disabled in-session and reenabled with the saved PIN',async()=>{
   const h=await mainHarness();
@@ -914,4 +928,232 @@ test('a new install asks for no PIN; turning the PIN on needs a PIN of your own 
 test('an existing install that never chose keeps asking for its PIN', async () => {
   const h = await mainHarness();
   assert.equal((await h.invoke('admin:access', 'xenia')).pin_required, true);
+});
+
+// ---- Dashboard Settings › Updates: the dashboard's own updates and the Xenia mode, checked once at start
+const takeNotices = async h => Array.from(await h.invoke('notices:take')).map(notice => notice.text);
+const UPDATE_CALLS = [['updates:app-state'], ['updates:app-mode', 'dashboard', 'auto'], ['updates:app-check'], ['updates:app-install'], ['updates:xenia-install'], ['updates:open-release-page']];
+test('modes are admin-only, validated, saved, and unknown saved values read as notify', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true, library: { update_mode_dashboard: 'AUTO', update_mode_xenia: 7 } });
+  for (const call of UPDATE_CALLS) {
+    await assert.rejects(h.invoke(...call), /session expired/);
+    await assert.rejects(h.untrusted(...call), /Untrusted/);
+  }
+  await h.invoke('admin:unlock', '1234', 'xenia');
+  await assert.rejects(h.invoke('updates:app-state'), /session expired/, 'a Xenia session is not enough');
+  await h.invoke('admin:lock'); await h.invoke('admin:unlock', '1234', 'dashboard');
+  const state = await h.invoke('updates:app-state');
+  assert.deepEqual({ ...state.modes }, { dashboard: 'notify', xenia: 'notify' });
+  assert.deepEqual({ ...state.dashboard }, { kind: 'setup', current: '1.3.0', latest: null, downloaded: false });
+  for (const [item, mode] of [['dashboard', 'AUTO'], ['xenia', 'on'], ['other', 'auto'], ['__proto__', 'auto'], [null, 'auto'], ['dashboard', undefined]])
+    await assert.rejects(h.invoke('updates:app-mode', item, mode), /Invalid update setting/);
+  assert.equal((await h.invoke('updates:app-mode', 'dashboard', 'auto')).modes.dashboard, 'auto');
+  const changed = await h.invoke('updates:app-mode', 'xenia', 'auto');
+  assert.deepEqual({ ...changed.modes }, { dashboard: 'auto', xenia: 'auto' });
+  assert.deepEqual([h.saved.at(-1).update_mode_dashboard, h.saved.at(-1).update_mode_xenia], ['auto', 'auto']);
+  assert.equal((await h.invoke('updates:app-mode', 'dashboard', 'notify')).modes.dashboard, 'notify');
+  assert.equal(h.saved.at(-1).update_mode_dashboard, 'notify');
+});
+test('a source install (not packaged) does no dashboard check and reports kind source', async () => {
+  const h = await mainHarness();
+  h.updater.latest = '9.9.9';
+  assert.equal(h.timers.length, 1, 'the start sets one timer for the update checks');
+  assert.ok(h.timers[0].unrefed, 'the timer does not keep the app alive');
+  assert.ok(h.timers[0].ms >= 1000, 'a few seconds after the window loaded');
+  await h.startup();
+  assert.equal(h.updater.created, 0, 'the updater is never even created');
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  const state = await h.invoke('updates:app-state');
+  assert.deepEqual({ ...state.dashboard }, { kind: 'source', current: '1.3.0', latest: null, downloaded: false });
+  await h.invoke('updates:app-check');
+  assert.equal(h.updater.created, 0);
+  await assert.rejects(h.invoke('updates:app-install'), /cannot update itself/);
+  assert.deepEqual(await takeNotices(h), []);
+});
+test('at start with a newer dashboard in notify mode: one notice, nothing downloaded', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true });
+  h.updater.latest = '1.4.0';
+  assert.equal(h.updater.created, 0, 'nothing touches the updater before the start check');
+  await h.startup();
+  assert.deepEqual(await takeNotices(h), ['Dashboard 1.4.0 available · Dashboard Settings › Updates']);
+  assert.equal(h.updater.checks, 1); assert.equal(h.updater.downloads, 0);
+  assert.ok(!h.updater.log.some(entry => entry[0] === 'installOnQuit' && entry[1]), 'nothing is set to install');
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  assert.deepEqual({ ...(await h.invoke('updates:app-state')).dashboard }, { kind: 'setup', current: '1.3.0', latest: '1.4.0', downloaded: false });
+  h.updater.latest = '1.5.0';
+  assert.equal((await h.invoke('updates:app-check')).dashboard.latest, '1.5.0', 'checking again from the menu re-reads the version');
+  assert.equal(h.updater.checks, 2); assert.equal(h.updater.downloads, 0);
+  assert.equal(h.windowCalls.filter(call => call[0] === 'notice').length, 0, 'a check from the menu puts up no notice');
+});
+test('at start in auto mode a newer dashboard is downloaded and installs on quit only after the download finished', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true, library: { update_mode_dashboard: 'auto' } });
+  h.updater.latest = '1.4.0';
+  let finish; h.updater.gate = new Promise(resolve => { finish = resolve; });
+  const started = h.startup();
+  for (let i = 0; i < 50 && !h.updater.downloads; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.updater.downloads, 1, 'the download starts by itself');
+  await h.invoke('admin:unlock', '1234', 'dashboard'); await h.invoke('admin:exit');
+  h.quit();
+  assert.deepEqual(h.updater.log, [], 'closing during the download sets nothing to install');
+  finish(true); await started;
+  assert.deepEqual(h.updater.log, [['downloaded', true], ['installOnQuit', true, true]]);
+  assert.deepEqual(await takeNotices(h), [], 'Automatic says nothing until the next start');
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  assert.equal((await h.invoke('updates:app-state')).dashboard.downloaded, true);
+  h.quit();
+  assert.deepEqual(h.updater.log.at(-1), ['installOnQuit', true, true], 'the user closes the app: the update installs');
+  assert.ok(!h.updater.log.some(entry => entry[0] === 'installNow'), 'never installed in the middle of use');
+  // The mode turned back to Notify only after the download: closing installs nothing.
+  await h.invoke('updates:app-mode', 'dashboard', 'notify'); h.quit();
+  assert.deepEqual(h.updater.log.at(-1), ['installOnQuit', false, true]);
+
+  const failed = await mainHarness(false, 'none', {}, { packaged: true, library: { update_mode_dashboard: 'auto' } });
+  failed.updater.latest = '1.4.0'; failed.updater.downloadResult = false;
+  await failed.startup();
+  await failed.invoke('admin:unlock', '1234', 'dashboard'); await failed.invoke('admin:exit'); failed.quit();
+  assert.deepEqual(failed.updater.log, [['downloaded', false]], 'a failed download is never set to install');
+  assert.deepEqual(await takeNotices(failed), [], 'and stays silent');
+});
+test('a failing check is silent: no notice, no thrown error, the window still loads', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true, library: { update_mode_dashboard: 'auto', update_mode_xenia: 'auto' } });
+  h.updater.checkThrows = true;
+  h.routes.set('https://api.github.com/repos/xenia-project/xenia-canary/releases/latest', () => { throw new Error('offline'); });
+  assert.deepEqual(h.loaded, ['nxe-app://dashboard/index.html'], 'the window loads before any check');
+  await h.startup();
+  assert.deepEqual(await takeNotices(h), []);
+  assert.equal(h.updater.downloads, 0);
+  assert.ok(!h.windowCalls.some(call => call[0] === 'quit'), 'the app keeps running');
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  assert.equal((await h.invoke('updates:app-check')).dashboard.latest, null, 'a check from the menu fails quietly too');
+});
+test('update now during a game is refused and downloads nothing', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true });
+  h.updater.latest = '1.4.0'; await h.startup();
+  await h.invoke('game:launch', 'test-game');
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  await assert.rejects(h.invoke('updates:app-install'), /^Error: Close the running game first\.$/);
+  assert.equal(h.updater.downloads, 0); assert.deepEqual(h.updater.log, []);
+});
+test('update now downloads first, installs only a finished download, and forwards whole percents only', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true });
+  await h.startup();
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  await assert.rejects(h.invoke('updates:app-install'), /No update to install/, 'nothing found at start: nothing to install');
+  h.updater.latest = '1.4.0'; await h.invoke('updates:app-check');
+  h.updater.downloadResult = false; h.updater.progress = [12, NaN, Infinity, 40];
+  await assert.rejects(h.invoke('updates:app-install'), /^Error: Could not download the update\.$/);
+  assert.deepEqual(h.updater.log, [['downloaded', false]], 'a failed download installs nothing');
+  assert.equal(h.quit().prevented, true, 'and the app still refuses to quit on its own');
+  assert.deepEqual(h.windowCalls.filter(call => call[0] === 'app-update:progress').map(call => call[1]), [12, 40]);
+  h.updater.downloadResult = true;
+  await h.invoke('updates:app-install');
+  assert.deepEqual(h.updater.log.slice(1), [['downloaded', true], ['installNow']]);
+  assert.equal(h.quit().prevented, false, 'the installer is allowed to close the app');
+});
+test('the first start after an upgrade shows "Dashboard updated to X" once, and never on a first install or with a garbage last_run_version', async () => {
+  const upgraded = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0', library: { last_run_version: '1.3.0' } });
+  await upgraded.startup();
+  assert.deepEqual(await takeNotices(upgraded), ['Dashboard updated to 1.4.0']);
+  assert.equal(upgraded.saved.at(-1).last_run_version, '1.4.0');
+  const next = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0', library: { last_run_version: upgraded.saved.at(-1).last_run_version } });
+  await next.startup();
+  assert.deepEqual(await takeNotices(next), [], 'the next start says nothing');
+  const first = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0' });
+  await first.startup();
+  assert.deepEqual(await takeNotices(first), [], 'a first install has nothing to compare');
+  assert.equal(first.saved.at(-1).last_run_version, '1.4.0');
+  for (const garbage of [42, null, true, {}, ['1.0.0'], '']) {
+    const h = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0', library: { last_run_version: garbage, last_run_xenia: garbage } });
+    await h.startup();
+    assert.deepEqual(await takeNotices(h), [], `no notice for ${JSON.stringify(garbage)}`);
+    assert.equal(h.saved.at(-1).last_run_version, '1.4.0');
+  }
+});
+test('Xenia automatic updates only a managed copy in use and skips while a game runs, showing the notify notice instead', async t => {
+  const NEWER = Buffer.concat([ELF, Buffer.from('newer')]);
+  const managed = async () => {
+    const { h } = await updatesHarness(t, { executable: '', packaged: true, library: { update_mode_xenia: 'auto' } });
+    pretendGithub(h, 'aaa1111', ELF);
+    await h.invoke('admin:unlock', '1234', 'xenia'); await h.invoke('xenia:updates-install', 'edge'); await h.invoke('admin:lock');
+    pretendGithub(h, 'bbb2222', NEWER);
+    return h;
+  };
+  const status = async h => { await h.invoke('admin:unlock', '1234', 'xenia'); const result = await h.invoke('xenia:updates-status'); await h.invoke('admin:lock'); return result.channels[0]; };
+  const h = await managed();
+  await h.startup();
+  assert.deepEqual(await takeNotices(h), ['Xenia Edge updated to bbb2222']);
+  const edge = await status(h);
+  assert.deepEqual([edge.installed.tag, edge.previous.tag, edge.in_use], ['bbb2222', 'aaa1111', true], 'switched to the new build, the old one kept');
+  assert.deepEqual({ ...h.saved.at(-1).last_run_xenia }, { channel: 'edge', tag: 'bbb2222' }, 'the next start does not announce it again');
+
+  const busy = await managed();
+  await busy.invoke('game:launch', 'test-game');
+  await busy.startup();
+  assert.deepEqual(await takeNotices(busy), ['Xenia Edge bbb2222 is ready · Xenia Settings › Updates']);
+  assert.equal((await status(busy)).installed.tag, 'aaa1111', 'nothing is installed while a game runs');
+
+  const notify = await managed();
+  await notify.invoke('admin:unlock', '1234', 'dashboard'); await notify.invoke('updates:app-mode', 'xenia', 'notify'); await notify.invoke('admin:lock');
+  await notify.startup();
+  assert.deepEqual(await takeNotices(notify), ['Xenia Edge bbb2222 is ready · Xenia Settings › Updates']);
+  assert.equal((await status(notify)).installed.tag, 'aaa1111', 'Notify only installs nothing');
+
+  // A Xenia of the user's own is never replaced, even in Automatic.
+  const fsp = require('node:fs/promises'), os = require('node:os');
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'xd-own-')); t.after(() => fsp.rm(dir, { recursive: true, force: true }));
+  const mine = path.join(dir, 'my-edge.AppImage'); await fsp.writeFile(mine, ELF);
+  const { h: own } = await updatesHarness(t, { executable: mine, packaged: true, library: { update_mode_xenia: 'auto' } });
+  pretendGithub(own, 'bbb2222', NEWER);
+  own.routes.set('https://api.github.com/repos/has207/xenia-edge/releases?per_page=30', () => new Response(JSON.stringify([{ tag_name: 'aaa1111', assets: [{ name: 'xenia_edge_linux.AppImage', digest: `sha256:${sha(ELF)}` }] }])));
+  await own.startup();
+  assert.deepEqual(await takeNotices(own), ['Xenia Edge bbb2222 is ready · Xenia Settings › Updates']);
+  assert.equal((await status(own)).installed, null, 'nothing was installed');
+  assert.deepEqual(await fsp.readFile(mine), ELF, 'the own copy is untouched');
+  await own.invoke('admin:unlock', '1234', 'dashboard');
+  const state = await own.invoke('updates:app-state');
+  assert.deepEqual([state.xenia.channel, state.xenia.installed, state.xenia.latest, state.xenia.managed], ['edge', 'aaa1111', 'bbb2222', false]);
+  await assert.rejects(own.invoke('updates:xenia-install'), /installed by the dashboard/, 'the menu row cannot replace it either');
+});
+test('Update now for Xenia installs only the latest build of the managed channel in use, with no arguments', async t => {
+  const { h } = await updatesHarness(t, { executable: '', packaged: true });
+  pretendGithub(h, 'aaa1111', ELF);
+  await h.invoke('admin:unlock', '1234', 'xenia'); await h.invoke('xenia:updates-install', 'edge'); await h.invoke('admin:lock');
+  pretendGithub(h, 'bbb2222', Buffer.concat([ELF, Buffer.from('newer')]));
+  await h.startup();
+  assert.deepEqual(await takeNotices(h), ['Xenia Edge bbb2222 is ready · Xenia Settings › Updates'], 'Notify only by default');
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  const before = await h.invoke('updates:app-state');
+  assert.deepEqual({ ...before.xenia }, { channel: 'edge', label: 'Xenia Edge', installed: 'aaa1111', latest: 'bbb2222', managed: true });
+  const after = await h.invoke('updates:xenia-install', 'canary', '/somewhere/else');
+  assert.deepEqual({ ...after.xenia }, { channel: 'edge', label: 'Xenia Edge', installed: 'bbb2222', latest: null, managed: true });
+  assert.ok(h.windowCalls.some(call => call[0] === 'updates:progress'), 'the download reports progress like the Xenia screen');
+  await h.invoke('admin:lock'); await h.invoke('admin:unlock', '1234', 'xenia');
+  const channels = (await h.invoke('xenia:updates-status')).channels;
+  assert.deepEqual([channels[0].installed.tag, channels[0].previous.tag], ['bbb2222', 'aaa1111']);
+  assert.ok(channels.slice(1).every(channel => !channel.installed), 'no other channel was touched');
+  await h.invoke('game:launch', 'test-game'); await h.invoke('admin:unlock', '1234', 'dashboard');
+  await assert.rejects(h.invoke('updates:xenia-install'), /Close the running game/);
+});
+test('open-release-page opens only the fixed URL', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true, env: { PORTABLE_EXECUTABLE_DIR: 'D:\\Apps' } });
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  assert.equal((await h.invoke('updates:app-state')).dashboard.kind, 'portable');
+  await h.invoke('updates:open-release-page', 'https://example.com/evil');
+  assert.deepEqual(h.opened, ['https://github.com/mfrafael/xenia-dashboard/releases/latest']);
+  await assert.rejects(h.invoke('updates:app-install'), /cannot update itself/, 'a Portable build opens the page instead');
+  assert.equal(h.updater.downloads, 0);
+});
+test('an AppImage in a folder it cannot write to only opens the release page', async t => {
+  const fsp = require('node:fs/promises'), os = require('node:os');
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'xd-appimage-')); t.after(() => fsp.rm(dir, { recursive: true, force: true }));
+  const writable = await mainHarness(false, 'none', {}, { packaged: true, platform: 'linux', env: { APPIMAGE: path.join(dir, 'Xenia-Dashboard.AppImage') } });
+  await writable.invoke('admin:unlock', '1234', 'dashboard');
+  assert.equal((await writable.invoke('updates:app-state')).dashboard.kind, 'appimage');
+  assert.ok(writable.accessCalls.includes(dir), 'the AppImage folder is checked');
+  const locked = await mainHarness(false, 'none', {}, { packaged: true, platform: 'linux', env: { APPIMAGE: path.join(dir, 'Xenia-Dashboard.AppImage') }, missingPaths: [dir] });
+  await locked.invoke('admin:unlock', '1234', 'dashboard');
+  assert.equal((await locked.invoke('updates:app-state')).dashboard.kind, 'appimage-locked');
+  locked.updater.latest = '1.4.0'; await locked.startup();
+  assert.deepEqual(await takeNotices(locked), ['Dashboard 1.4.0 available · Dashboard Settings › Updates']);
+  assert.equal(locked.updater.downloads, 0);
 });

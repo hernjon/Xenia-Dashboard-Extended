@@ -77,6 +77,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('updates:progress', listener);
     return () => ipcRenderer.removeListener('updates:progress', listener);
   },
+  getAppUpdates: () => ipcRenderer.invoke('updates:app-state'),
+  setUpdateMode: (item, mode) => ipcRenderer.invoke('updates:app-mode', item, mode),
+  checkAppUpdates: () => ipcRenderer.invoke('updates:app-check'),
+  installAppUpdate: () => ipcRenderer.invoke('updates:app-install'),
+  installXeniaUpdate: () => ipcRenderer.invoke('updates:xenia-install'),
+  openReleasePage: () => ipcRenderer.invoke('updates:open-release-page'),
+  onAppUpdateProgress: callback => {
+    const listener = (_event, percent) => callback(percent);
+    ipcRenderer.on('app-update:progress', listener);
+    return () => ipcRenderer.removeListener('app-update:progress', listener);
+  },
   getGameInfo: gameId => ipcRenderer.invoke('xenia:game-info', gameId),
   onCloseRequest: callback => {
     const listener = () => callback();

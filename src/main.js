@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, globalShortcut, protocol, net, dialog, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, globalShortcut, protocol, net, dialog, nativeImage, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
 const crypto=require('node:crypto');
@@ -16,6 +16,8 @@ const {readAsset,appFile}=require('./local-assets');
 const wizardState=require('./wizard-state');
 const {watchTitleExit,terminateXenia}=require('./title-exit');
 const updateNotice=require('./update-notice');
+const updatePolicy=require('./update-policy');
+const selfUpdate=require('./self-update');
 const xeniaConfig=require('./xenia-config');
 const xeniaSettings=require('./xenia-settings');
 const xeniaPatches=require('./xenia-patches');
@@ -28,7 +30,7 @@ const localCover=require('./local-cover');
 const coverSourcesModule=require('./cover-sources');
 const nativeGames=require('./native-games');
 const runners=require('./runners');
-const {existsSync}=require('node:fs');
+const {existsSync,constants:fsConstants}=require('node:fs');
 const ROOT=path.join(__dirname,'..'); // the app folder: index.html, assets/, skins/ ... are served from here
 const RENDERER_URL='nxe-app://dashboard/index.html';
 const unsafeSwitch=['no-sandbox','disable-web-security','ignore-certificate-errors','allow-running-insecure-content'].find(flag=>app.commandLine.hasSwitch?.(flag));
@@ -246,19 +248,118 @@ const notices = []; let noticesReady = false;
 function pushNotice(notice) {
   if (noticesReady && win && !win.isDestroyed()) win.webContents.send('notice', notice); else notices.push(notice);
 }
-// Once, when the app opens: is the Xenia in use out of date? Offline or anything unexpected simply says nothing.
+// The Xenia the dashboard installed and is launching (what Xenia Settings › Updates calls "in use"); null for a Xenia of the user's own.
+const managedXenia=status=>status.channels.find(channel=>channel.in_use&&channel.installed?.tag)||null;
+// Is the Xenia in use out of date? → {channel,label,installed,latest (null: up to date or unknown),managed,found} for the managed
+// copy or an own copy recognised as an official build, otherwise null. Offline or anything unexpected only leaves `latest` empty.
 async function checkXeniaUpdate() {
+  const platform = process.platform === 'win32' ? 'win32' : process.platform === 'linux' ? 'linux' : null;
+  if (!platform || !library?.xenia_executable) return null;
+  const status = await updatesStatus(), used = managedXenia(status);
+  const request = (url, limit) => covers.request(url, (...args) => net.fetch(...args), limit);
+  let found = null;
   try {
-    const platform = process.platform === 'win32' ? 'win32' : process.platform === 'linux' ? 'linux' : null;
-    if (!platform || !library?.xenia_executable) return;
-    const request = (url, limit) => covers.request(url, (...args) => net.fetch(...args), limit);
-    const found = await updateNotice.findUpdate({
-      status: await updatesStatus(), configured: library.xenia_executable, platform, supports: xeniaReleases.supports,
+    found = await updateNotice.findUpdate({
+      status, configured: library.xenia_executable, platform, supports: xeniaReleases.supports,
       latest: id => xeniaReleases.latest(id, platform, request),
       identify: (id, release) => xeniaReleases.identify(library.xenia_executable, id, platform, request, release)
     });
-    if (found) pushNotice(updateNotice.noticeFor(found));
   } catch (error) { console.warn('[Xenia Dashboard] Update check:', error.message); }
+  if (used) return { channel: used.id, label: used.label, installed: used.installed.tag, latest: found?.latest ?? null, managed: true, found };
+  return found && { channel: found.channel, label: found.label, installed: found.installed, latest: found.latest, managed: false, found };
+}
+// Downloads, verifies and installs the latest build of one channel; the build it replaces is kept to go back to. `allowed` runs again
+// once the release is known, to re-check what let the caller start (a PIN session, no game running). Returns the release installed.
+async function installXenia(channel,allowed){
+  requireIdle();const platform=updatesPlatform(channel);
+  const release=await xeniaReleases.latest(channel,platform,(url,limit)=>covers.request(url,(...args)=>net.fetch(...args),limit));
+  allowed();
+  await xeniaReleases.downloadAndInstall(installsRoot(),channel,platform,release,{fetcher:xeniaReleases.httpsFetcher,onProgress:progress=>{if(win&&!win.isDestroyed())win.webContents.send('updates:progress',progress);}});
+  // Nothing configured yet (a first run): use what was just installed. Otherwise the user decides.
+  if(!library.xenia_executable)await useInstalled(channel,platform);
+  return release;
+}
+// ---- Updates (Dashboard Settings › Updates): the dashboard's own and Xenia's, each 'notify' (the default) or 'auto'. Checked once
+// per start, a few seconds after the window loaded; offline or GitHub failing says nothing. Only 'auto' installs anything by itself.
+const RELEASE_PAGE='https://github.com/mfrafael/xenia-dashboard/releases/latest';
+const STARTUP_CHECK_DELAY=5000;
+const updateModes=()=>({dashboard:updatePolicy.normalizeMode(library?.update_mode_dashboard),xenia:updatePolicy.normalizeMode(library?.update_mode_xenia)});
+const gameRunning=()=>!!(child||launchPending);
+let installKindFound=null,selfUpdater=null,dashboardLatest=null,dashboardDownloaded=false,dashboardDownload=null,xeniaUpdate=null,startupChecked=false;
+// How this copy was installed decides whether it can replace itself; an AppImage also needs a folder it may write to.
+function dashboardKind(){
+  return installKindFound??=(async()=>{
+    const env=process.env||{};let appImageWritable=false;
+    if(app.isPackaged&&process.platform==='linux'&&env.APPIMAGE)appImageWritable=await fs.access(path.dirname(env.APPIMAGE),fsConstants.W_OK).then(()=>true,()=>false);
+    return updatePolicy.installKind({packaged:app.isPackaged===true,platform:process.platform,env,appImageWritable});
+  })();
+}
+// Made on first use and never for a source install, so electron-updater is only loaded when a packaged copy checks.
+const dashboardUpdater=()=>selfUpdater??=selfUpdate.createSelfUpdater({loadUpdater:()=>require('electron-updater').autoUpdater,log:message=>console.warn('[Xenia Dashboard] Update:',message)});
+const sendAppProgress=percent=>{if(Number.isFinite(percent)&&win&&!win.isDestroyed())win.webContents.send('app-update:progress',percent);};
+// One download at a time; a failed one can be tried again.
+function downloadDashboard(){
+  return dashboardDownload??=dashboardUpdater().download(sendAppProgress).then(ok=>ok===true,()=>false).then(ok=>{dashboardDownloaded=ok;if(!ok)dashboardDownload=null;return ok;});
+}
+async function appUpdateState(){
+  return {modes:updateModes(),dashboard:{kind:await dashboardKind(),current:app.getVersion(),latest:dashboardLatest,downloaded:dashboardDownloaded},
+    xenia:xeniaUpdate&&{channel:xeniaUpdate.channel,label:xeniaUpdate.label,installed:xeniaUpdate.installed,latest:xeniaUpdate.latest,managed:xeniaUpdate.managed}};
+}
+const xeniaUpdatedNotice=(channel,label,tag)=>({id:`xenia-updated:${channel}:${tag}`,title:'Xenia updated',text:`${label} updated to ${tag}`});
+// What ran this time, so the next start can tell that an update happened.
+const rememberRun=xenia=>serialized(async()=>{
+  const next={...library,last_run_version:app.getVersion()};if(xenia)next.last_run_xenia=xenia;else delete next.last_run_xenia;
+  await scanner.saveLibrary(libraryFile,next);library=next;
+});
+// The first start after an update says so, once.
+async function announceUpdates(){
+  const dashboard=updatePolicy.updatedNotice({lastRun:library.last_run_version,current:app.getVersion()});
+  if(dashboard)pushNotice({id:`dashboard-updated:${dashboard.to}`,title:'Dashboard updated',text:`Dashboard updated to ${dashboard.to}`});
+  const used=managedXenia(await updatesStatus()),now=used&&{channel:used.id,tag:used.installed.tag};
+  const xenia=updatePolicy.xeniaUpdatedNotice({last:library.last_run_xenia,now});
+  if(xenia)pushNotice(xeniaUpdatedNotice(xenia.channel,used.label,xenia.to));
+  await rememberRun(now);
+}
+// `act` (only at start) puts up the notices and does what Automatic allows; a check from the menu only refreshes the state.
+async function checkDashboardUpdate(act){
+  const kind=await dashboardKind();
+  if(kind==='source')return;
+  let latest=null;
+  try{latest=(await dashboardUpdater().check())?.version||null;}catch(error){console.warn('[Xenia Dashboard] Update check:',error.message);}
+  const action=updatePolicy.dashboardAction({kind,mode:updateModes().dashboard,current:app.getVersion(),latest});
+  dashboardLatest=action==='none'?null:latest;
+  if(!act)return;
+  if(action==='notify'||action==='open-page')pushNotice({id:`dashboard-update:${latest}`,title:'Dashboard update available',text:`Dashboard ${latest} available · Dashboard Settings › Updates`});
+  // Automatic: download now, install when the user closes the app (see before-quit), never in the middle of use.
+  if(action==='auto-download'&&await downloadDashboard())dashboardUpdater().installOnQuit(true);
+}
+async function checkXenia(act){
+  const xenia=await checkXeniaUpdate().catch(error=>{console.warn('[Xenia Dashboard] Update check:',error.message);return null;});
+  xeniaUpdate=xenia;
+  if(!act||!xenia?.found)return;
+  const action=updatePolicy.xeniaAction({found:xenia.found,managed:xenia.managed,mode:updateModes().xenia,gameRunning:gameRunning()});
+  if(action==='notify')pushNotice(updateNotice.noticeFor(xenia.found));
+  if(action!=='auto-install')return;
+  try{
+    const release=await serialized(async()=>managedXenia(await updatesStatus())?.id===xenia.channel?installXenia(xenia.channel,requireIdle):null);
+    if(!release)return;   // the user switched to another Xenia meanwhile
+    xeniaUpdate={...xenia,installed:release.tag,latest:null};
+    pushNotice(xeniaUpdatedNotice(xenia.channel,xenia.label,release.tag));
+    await rememberRun({channel:xenia.channel,tag:release.tag});
+  }catch(error){
+    console.warn('[Xenia Dashboard] Xenia update:',error.message);
+    if(gameRunning())pushNotice(updateNotice.noticeFor(xenia.found));   // a game started meanwhile: tell the user instead
+  }
+}
+async function checkAppUpdates({act=false}={}){
+  await Promise.all([checkDashboardUpdate(act),checkXenia(act)]);
+  return appUpdateState();
+}
+// Once per start (the timer set after the window loaded), in the background. Nothing in here may reach the user as an error.
+async function runStartupUpdateChecks(){
+  if(startupChecked)return;startupChecked=true;
+  try{await announceUpdates();}catch(error){console.warn('[Xenia Dashboard] Update notice:',error.message);}
+  try{await checkAppUpdates({act:true});}catch(error){console.warn('[Xenia Dashboard] Update check:',error.message);}
 }
 function recover(state) {
   child = null;
@@ -644,15 +745,7 @@ else {
       try{current_tag=await xeniaReleases.identify(library.xenia_executable,channel,platform,request,release);}catch{/* an unreadable file just stays unidentified */}
       requireAdmin('xenia');return {...release,current_tag};
     });
-    handle('xenia:updates-install',channel=>serialized(async()=>{
-      requireAdmin('xenia');requireIdle();const platform=updatesPlatform(channel);
-      const release=await xeniaReleases.latest(channel,platform,(url,limit)=>covers.request(url,(...args)=>net.fetch(...args),limit));
-      requireAdmin('xenia');
-      await xeniaReleases.downloadAndInstall(installsRoot(),channel,platform,release,{fetcher:xeniaReleases.httpsFetcher,onProgress:progress=>{if(win&&!win.isDestroyed())win.webContents.send('updates:progress',progress);}});
-      // Nothing configured yet (a first run): use what was just installed. Otherwise the user decides.
-      if(!library.xenia_executable)await useInstalled(channel,platform);
-      return updatesStatus();
-    }));
+    handle('xenia:updates-install',channel=>serialized(async()=>{requireAdmin('xenia');await installXenia(channel,()=>requireAdmin('xenia'));return updatesStatus();}));
     handle('xenia:updates-use',channel=>serialized(async()=>{requireAdmin('xenia');requireIdle();await useInstalled(channel,updatesPlatform(channel));return updatesStatus();}));
     // "Install folder" row: pick where the downloaded Xenia lives (or go back to the default). Existing builds move along.
     handle('xenia:updates-folder',action=>serialized(async()=>{
@@ -813,6 +906,33 @@ else {
       return {games:publicGames(),downloaded:files.size,missing:wanted.length-files.size};
     }));
     handle('admin:exit', () => { requireAdmin('dashboard'); allowQuit = true; app.quit(); });
+    // Dashboard Settings › Updates. Every call needs the Dashboard session and takes only fixed values: the renderer never passes a URL.
+    handle('updates:app-state',()=>{requireAdmin('dashboard');return appUpdateState();});
+    handle('updates:app-mode',(item,mode)=>serialized(async()=>{
+      requireAdmin('dashboard');if(!['dashboard','xenia'].includes(item)||!['notify','auto'].includes(mode))throw Error('Invalid update setting');
+      const next={...library,[`update_mode_${item}`]:mode};await scanner.saveLibrary(libraryFile,next);library=next;return appUpdateState();
+    }));
+    handle('updates:app-check',async()=>{requireAdmin('dashboard');const state=await checkAppUpdates();requireAdmin('dashboard');return state;});
+    // "Update to…": download (progress on the row), then the installer closes the app, installs and opens it again.
+    handle('updates:app-install',()=>serialized(async()=>{
+      requireAdmin('dashboard');
+      if(gameRunning())throw Error('Close the running game first.');
+      if(!updatePolicy.canSelfUpdate(await dashboardKind()))throw Error('This copy of the dashboard cannot update itself: open the release page instead.');
+      if(!dashboardLatest)throw Error('No update to install. Check again first.');
+      if(!await downloadDashboard())throw Error('Could not download the update.');
+      if(gameRunning())throw Error('Close the running game first.');
+      allowQuit=true;dashboardUpdater().installNow();
+    }));
+    // Xenia's "Update to…": only the latest build of the managed channel in use, the same install as Xenia Settings › Updates.
+    handle('updates:xenia-install',()=>serialized(async()=>{
+      requireAdmin('dashboard');
+      const used=managedXenia(await updatesStatus());
+      if(!used)throw Error('Only a Xenia installed by the dashboard and in use can be updated here.');
+      const release=await installXenia(used.id,()=>requireAdmin('dashboard'));
+      xeniaUpdate={channel:used.id,label:used.label,installed:release.tag,latest:null,managed:true};
+      return appUpdateState();
+    }));
+    handle('updates:open-release-page',async()=>{requireAdmin('dashboard');await shell.openExternal(RELEASE_PAGE);});
     const fullscreen = windowMode() === 'fullscreen';
     win = new BrowserWindow({ icon: path.join(ROOT, 'assets', 'icon.png'), title: 'Xenia Dashboard', kiosk: fullscreen, fullscreen, minWidth: 960, minHeight: 540, ...(fullscreen ? {} : windowedBounds()), autoHideMenuBar: true, backgroundColor: '#07090c', webPreferences: { preload: path.join(__dirname, 'preload.js'), nodeIntegration: false, contextIsolation: true, sandbox: true, devTools: false } });
     win.setMenu(null);
@@ -848,11 +968,14 @@ else {
     win.webContents.session.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
     win.webContents.session.setPermissionCheckHandler(()=>false);
     await win.loadURL(RENDERER_URL); shortcuts();
-    checkXeniaUpdate(); // in the background; a notification appears if the Xenia in use has a newer build
+    setTimeout(runStartupUpdateChecks,STARTUP_CHECK_DELAY).unref?.(); // the update checks, in the background; they never hold the app open
     console.info('[Xenia Dashboard] Dashboard loaded.');
   }).catch(error => { console.error(error); allowQuit = true; app.quit(); });
 }
 app.on('before-quit', event => { if (win && !allowQuit) event.preventDefault(); });
+// Automatic: a finished download installs when the user closes the app (electron-updater runs it on quit, without reopening it),
+// and only while Automatic is still chosen and no game is running.
+app.on('before-quit', () => { if (allowQuit && dashboardDownloaded) selfUpdater?.installOnQuit(updateModes().dashboard === 'auto' && !gameRunning()); });
 // Logging out or `kill` must not leave NXE hanging behind its own quit guard.
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.on(signal, () => { allowQuit = true; app.quit(); });
 app.on('will-quit', () => globalShortcut.unregisterAll());
