@@ -1246,6 +1246,18 @@ test('if the installer cannot start, the app does not stay closable without the 
   await assert.rejects(h.invoke('updates:app-install'), /Could not start the update: installer missing/);
   assert.equal(h.quit().prevented, true, 'quitting is guarded again');
 });
+test('if the installer returns without closing the app, quitting is guarded again a few seconds later', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true });
+  h.updater.latest = '1.4.0'; await h.startup();
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  await h.invoke('updates:app-install');   // the fake installNow returns normally and the app keeps running
+  assert.equal(h.quit().prevented, false, 'the installer may close the app right away');
+  const guard = h.timers.find(timer => timer.ms >= 5000);
+  assert.ok(guard, 'a timer re-arms the guard');
+  assert.ok(guard.unrefed, 'and it never keeps the app alive');
+  guard.fn();
+  assert.equal(h.quit().prevented, true, 'still running after the wait: the PIN is needed again to close');
+});
 test('a failure in one phase of the start check never stops the other or reaches the user', async () => {
   const saving = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0', library: { last_run_version: '1.3.0' } });
   saving.updater.latest = '1.5.0'; saving.saveControl.fail = true;

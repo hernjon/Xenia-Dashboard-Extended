@@ -288,6 +288,7 @@ async function installXenia(channel,allowed){
 // per start, a few seconds after the window loaded; offline or GitHub failing says nothing. Only 'auto' installs anything by itself.
 const RELEASE_PAGE='https://github.com/mfrafael/xenia-dashboard/releases/latest';
 const STARTUP_CHECK_DELAY=5000;
+const INSTALL_QUIT_GRACE=10000;   // how long "Update to…" leaves the app closable for the installer
 const updateModes=()=>({dashboard:updatePolicy.normalizeMode(library?.update_mode_dashboard),xenia:updatePolicy.normalizeMode(library?.update_mode_xenia)});
 const gameRunning=()=>!!(child||launchPending);
 let installKindFound=null,selfUpdater=null,dashboardLatest=null,dashboardDownloaded=false,dashboardDownload=null,xeniaUpdate=null,startupChecked=false;
@@ -941,6 +942,8 @@ else {
       allowQuit=true;   // the installer closes the app
       try{dashboardUpdater().installNow();}
       catch(error){allowQuit=false;throw new Error(`Could not start the update: ${error?.message||error}`);}
+      // quitAndInstall can also fail without throwing: if the app is still running a while later, closing needs the PIN again.
+      setTimeout(()=>{allowQuit=false;},INSTALL_QUIT_GRACE).unref?.();
     }));
     // Xenia's "Update to…": only the latest build of the managed channel in use, the same install as Xenia Settings › Updates.
     handle('updates:xenia-install',()=>serialized(async()=>{
