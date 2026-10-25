@@ -31,6 +31,13 @@
     "directories": {
       "output": "dist"
     },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mfrafael",
+        "repo": "xenia-dashboard"
+      }
+    ],
     "files": [
       "src/**/*.js",
       "ui/**/*",
