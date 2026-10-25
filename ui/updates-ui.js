@@ -28,6 +28,7 @@ function renderAppUpdates(index = 0) {
   content.replaceChildren(node('p', 'cover-summary', 'Notify only tells you when a new version is out. Automatic installs it by itself: the dashboard when you close it, Xenia when no game is running.'));
   buttons(rows.map(row => row.label), 'cover-options', activate);
 }
+// Not the renderer's keepRow: that passes its result to applyTheme, this one re-renders the whole screen from the state the main process returns.
 // Runs a change, shows the state the main process answers and puts the cursor back on the row that was used.
 async function keepUpdatesRow(work) {
   const choice = selected; busy = true;
@@ -43,7 +44,7 @@ function stepAppUpdateMode(delta) {
   window.uiSounds?.play(delta < 0 ? 'left' : 'right'); return keepUpdatesRow(() => api.setUpdateMode(item, next.value));
 }
 async function installDashboardUpdate() {
-  const stop = api.onAppUpdateProgress?.(progress => { if (Number.isFinite(progress?.percent)) errorDisplay.textContent = `Downloading… ${Math.floor(progress.percent)}%`; });
+  const stop = api.onAppUpdateProgress?.(percent => { if (typeof percent === 'number' && Number.isFinite(percent)) errorDisplay.textContent = `Downloading… ${Math.floor(percent)}%`; });
   errorDisplay.textContent = 'Downloading…';
   try { await keepUpdatesRow(async () => { await api.installAppUpdate(); }); } finally { stop?.(); }
 }

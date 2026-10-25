@@ -27,10 +27,10 @@ function harness(initial = state(), overrides = {}) {
   const api = {
     getAdminAccess: async () => ({ pin_required: false }), lockAdmin: async () => {},
     getAppUpdates: async () => { calls.push('get'); return current; },
-    setUpdateMode: async (item, mode) => { calls.push(['mode', item, mode]); current = { ...current, modes: { ...current.modes, [item]: mode } }; return current; },
-    checkAppUpdates: async () => { calls.push('check'); if (overrides.check) current = overrides.check; return current; },
-    installAppUpdate: async () => { calls.push('install'); progress?.({ percent: 41.6 }); progress?.({ percent: NaN }); if (overrides.installError) throw new Error(overrides.installError); },
-    installXeniaUpdate: async () => { calls.push('install-xenia'); current = { ...current, xenia: { ...current.xenia, installed: current.xenia.latest, latest: null } }; return current; },
+    setUpdateMode: async (item, mode) => { calls.push(['mode', item, mode]); if (overrides.modeError) throw new Error(overrides.modeError); current = { ...current, modes: { ...current.modes, [item]: mode } }; return current; },
+    checkAppUpdates: async () => { calls.push('check'); if (overrides.checkError) throw new Error(overrides.checkError); if (overrides.check) current = overrides.check; return current; },
+    installAppUpdate: async () => { calls.push('install'); progress?.(41.6); progress?.(NaN); if (overrides.installError) throw new Error(overrides.installError); },
+    installXeniaUpdate: async () => { calls.push('install-xenia'); if (overrides.xeniaError) throw new Error(overrides.xeniaError); current = { ...current, xenia: { ...current.xenia, installed: current.xenia.latest, latest: null } }; return current; },
     openReleasePage: async () => { calls.push('page'); },
     onAppUpdateProgress: callback => { progress = callback; return () => {}; }
   };
@@ -152,4 +152,53 @@ test('the tile sits after Install Wizard and before Exit to desktop and opens th
   assert.deepEqual(ids.slice(ids.indexOf('wizard')), ['wizard', 'updates', 'exit']);
   dashboard.activate(dashboard.items().find(item => item.id === 'updates'));
   assert.deepEqual(entered, ['dashboard:updates']);
+});
+
+const errorText = h => h.byId['modal-error'].textContent;
+
+test('a rejected mode change shows the message, keeps the cursor and leaves the screen usable', async () => {
+  const h = harness(state(), { modeError: 'Not allowed.' });
+  await h.run('openAppUpdates()');
+  h.run('selected=1;input("a")'); h.run('dialog.focus=1;input("a")'); await h.settle();
+  assert.equal(errorText(h), 'Not allowed.');
+  assert.equal(h.run('mode'), 'app-updates', 'the choice list closed back onto the screen');
+  assert.equal(h.cursor(), 1);
+  assert.equal(h.labels()[1], 'Xenia: Notify only');
+  h.run('input("down")'); h.run('selected=2;input("a")'); await h.settle();
+  assert.ok(h.calls.includes('check'), 'still usable');
+});
+
+test('an Up to date re-check that fails shows the message on the row', async () => {
+  const h = harness(state(), { checkError: 'Offline.' });
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("a")'); await h.settle();
+  assert.equal(errorText(h), 'Offline.');
+  assert.equal(h.cursor(), 2);
+  assert.equal(h.run('mode'), 'app-updates');
+});
+
+test('a failing Xenia Update to… shows the message on the row', async () => {
+  const h = harness(state({ xenia: { channel: 'edge', label: 'Xenia Edge', installed: 'v1.0.0', latest: 'v1.1.0', managed: true } }), { xeniaError: 'Close the running game first.' });
+  await h.run('openAppUpdates()');
+  h.run('selected=3;input("a")'); await h.settle();
+  assert.equal(errorText(h), 'Close the running game first.');
+  assert.equal(h.cursor(), 3);
+  assert.equal(h.labels()[3], 'Update to v1.1.0');
+});
+
+test('the Checking… and Installing… texts are gone once the work succeeded', async () => {
+  const h = harness(state({ xenia: { channel: 'edge', label: 'Xenia Edge', installed: 'v1.0.0', latest: 'v1.1.0', managed: true } }));
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("a")'); await h.settle();
+  assert.equal(errorText(h), '');
+  h.run('selected=3;input("a")'); await h.settle();
+  assert.equal(errorText(h), '');
+});
+
+test('left and right do nothing on a row that is not a mode row', async () => {
+  const h = harness();
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("right");input("left")'); await h.settle();
+  assert.deepEqual(h.calls, ['get']);
+  assert.equal(h.cursor(), 2);
 });
