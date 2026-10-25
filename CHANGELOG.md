@@ -3,6 +3,20 @@
 All notable changes to Xenia Dashboard. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-10-25
+
+Updates for the dashboard and for Xenia.
+
+### Added
+- **Updates menu.** *Dashboard Settings › Updates* sets the dashboard and Xenia, each on its own, to **Notify only** (the default) or **Automatic**. The app checks when it starts, and stays quiet when offline.
+- **Update from the app.** *Update to…* downloads, closes, installs and reopens. **Automatic** installs when you close the app and says "updated to X" the next time you open it.
+- Setup and AppImage update themselves. The Portable build only notifies and opens the release page.
+
+### Minor changes
+- Installing a Xenia now blocks launching a game until it finishes.
+- A shipped build is not code-signed: updates are checked against the checksum of the GitHub release.
+- The first version with this menu is installed by hand once.
+
 ## [1.3.0] - 2026-10-24
 
 Recomps and PC ports in the library, building on [@hernjon](https://github.com/hernjon)'s work. Thank you!
