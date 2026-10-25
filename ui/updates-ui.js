@@ -6,6 +6,11 @@
 const UPDATE_MODES = [{ value: 'notify', label: 'Notify only' }, { value: 'auto', label: 'Automatic' }];
 const updateModeLabel = value => (UPDATE_MODES.find(option => option.value === value) || UPDATE_MODES[0]).label;
 let appUpdates = null;
+// True while the dashboard's "Update to…" download runs. It does not hold `busy`: B can leave the screen on a slow network
+// while the download goes on in the main process, and the rows refuse new work until it ends.
+let dashboardDownloading = false;
+const updatesScreenOpen = () => mode === 'app-updates';
+const DOWNLOAD_RUNNING = 'The update is already downloading…';
 
 // Pure: the rows for a state. The dashboard state row is absent for a source checkout (it has nothing to update).
 function appUpdateRows(state) {
@@ -38,18 +43,24 @@ async function keepUpdatesRow(work) {
 }
 const updateModeItem = action => (action === 'mode-dashboard' ? 'dashboard' : action === 'mode-xenia' ? 'xenia' : null);
 function stepAppUpdateMode(delta) {
+  if (dashboardDownloading) return;
   const item = updateModeItem(appUpdateRows(appUpdates)[selected]?.action); if (!item) return;
   const index = UPDATE_MODES.findIndex(option => option.value === appUpdates.modes[item]), next = UPDATE_MODES[index + delta];
   if (!next) return;
   window.uiSounds?.play(delta < 0 ? 'left' : 'right'); return keepUpdatesRow(() => api.setUpdateMode(item, next.value));
 }
+// Progress and the outcome are shown only while the Updates screen is open (also when it was left and opened again).
 async function installDashboardUpdate() {
-  const stop = api.onAppUpdateProgress?.(percent => { if (typeof percent === 'number' && Number.isFinite(percent)) errorDisplay.textContent = `Downloading… ${Math.floor(percent)}%`; });
+  const choice = selected; dashboardDownloading = true;
+  const stop = api.onAppUpdateProgress?.(percent => { if (updatesScreenOpen() && typeof percent === 'number' && Number.isFinite(percent)) errorDisplay.textContent = `Downloading… ${Math.floor(percent)}%`; });
   errorDisplay.textContent = 'Downloading…';
-  try { await keepUpdatesRow(async () => { await api.installAppUpdate(); }); } finally { stop?.(); }
+  try { await api.installAppUpdate(); if (updatesScreenOpen()) { renderAppUpdates(choice); highlight(); } }
+  catch (error) { if (updatesScreenOpen()) errorDisplay.textContent = error.message; }
+  finally { dashboardDownloading = false; stop?.(); }
 }
 async function activateAppUpdates() {
   const row = appUpdateRows(appUpdates)[selected]; if (!row || row.action === 'back') return returnSettings();
+  if (dashboardDownloading) { errorDisplay.textContent = DOWNLOAD_RUNNING; return; }
   const item = updateModeItem(row.action);
   if (item) return openChoice({ title: item === 'dashboard' ? 'Dashboard updates' : 'Xenia updates', text: item === 'dashboard' ? 'Notify only tells you when a new dashboard is out. Automatic downloads it and installs it when you close the dashboard.' : 'Notify only tells you when a new Xenia is out. Automatic installs it by itself when no game is running. Move ← → on the row to change it.', options: UPDATE_MODES, current: appUpdates.modes[item], onPick: value => keepUpdatesRow(() => api.setUpdateMode(item, value)) });
   if (row.action === 'check') { errorDisplay.textContent = 'Checking…'; return keepUpdatesRow(() => api.checkAppUpdates()); }

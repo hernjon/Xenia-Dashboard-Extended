@@ -22,17 +22,17 @@ function harness(initial = state(), overrides = {}) {
     querySelector() { return null; }
   }
   const byId = {}, document = { body: new Element('body'), getElementById: id => byId[id] ||= new Element('div'), createElement: t => new Element(t), createTextNode: text => ({ textContent: text }), querySelector: () => new Element('div') };
-  const calls = [];
+  const calls = [], subscriptions = { open: 0, released: 0 };
   let current = initial, progress = null;
   const api = {
     getAdminAccess: async () => ({ pin_required: false }), lockAdmin: async () => {},
     getAppUpdates: async () => { calls.push('get'); return current; },
     setUpdateMode: async (item, mode) => { calls.push(['mode', item, mode]); if (overrides.modeError) throw new Error(overrides.modeError); current = { ...current, modes: { ...current.modes, [item]: mode } }; return current; },
     checkAppUpdates: async () => { calls.push('check'); if (overrides.checkError) throw new Error(overrides.checkError); if (overrides.check) current = overrides.check; return current; },
-    installAppUpdate: async () => { calls.push('install'); progress?.(41.6); progress?.(NaN); if (overrides.installError) throw new Error(overrides.installError); },
+    installAppUpdate: async () => { calls.push('install'); progress?.(41.6); progress?.(NaN); if (overrides.installGate) await overrides.installGate; if (overrides.installError) throw new Error(overrides.installError); },
     installXeniaUpdate: async () => { calls.push('install-xenia'); if (overrides.xeniaError) throw new Error(overrides.xeniaError); current = { ...current, xenia: { ...current.xenia, installed: current.xenia.latest, latest: null } }; return current; },
     openReleasePage: async () => { calls.push('page'); },
-    onAppUpdateProgress: callback => { progress = callback; return () => {}; }
+    onAppUpdateProgress: callback => { progress = callback; subscriptions.open++; return () => { subscriptions.open--; subscriptions.released++; }; }
   };
   const context = vm.createContext({ window: { electronAPI: api, addEventListener() {}, matchMedia: () => ({ matches: false }), uiSounds: { play() {}, configure() {} } }, document, requestAnimationFrame() {}, addEventListener() {}, innerWidth: 1920, innerHeight: 1080, navigator: {}, setTimeout, clearTimeout });
   loadDashboard(vm, context, 'gamesList=[];xeniaReady=false;renderCarousel();');
@@ -40,7 +40,7 @@ function harness(initial = state(), overrides = {}) {
   const settle = () => new Promise(resolve => setImmediate(resolve)).then(() => new Promise(resolve => setImmediate(resolve)));
   const labels = () => JSON.parse(run("JSON.stringify(selectableButtons().map(button => button.textContent))"));
   const cursor = () => run('selected');
-  return { run, byId, calls, settle, labels, cursor };
+  return { run, byId, calls, settle, labels, cursor, subscriptions, emitProgress: percent => progress?.(percent) };
 }
 
 test('the Updates screen lists the two modes, then the state rows, then Return', async () => {
@@ -201,4 +201,53 @@ test('left and right do nothing on a row that is not a mode row', async () => {
   h.run('selected=2;input("right");input("left")'); await h.settle();
   assert.deepEqual(h.calls, ['get']);
   assert.equal(h.cursor(), 2);
+});
+
+// A download the test finishes by hand, and a record of every write to the error line.
+function stalledDownload() {
+  let finish;
+  const gate = new Promise(resolve => { finish = resolve; });
+  const h = harness(state({ dashboard: { kind: 'installer', current: '1.3.0', latest: '1.4.0', downloaded: false } }), { installGate: gate });
+  const writes = [];
+  Object.defineProperty(h.byId['modal-error'], 'textContent', { get() { return this._t || ''; }, set(value) { this._t = value; writes.push(value); } });
+  return { h, writes, finish };
+}
+
+test('B leaves the Updates screen while the dashboard download runs, and the download keeps going', async () => {
+  const { h, finish } = stalledDownload();
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("a")'); await h.settle();
+  assert.deepEqual(h.calls.filter(call => call === 'install'), ['install']);
+  h.run('input("b")');
+  assert.equal(h.run('mode'), 'library', 'back out of the settings while the download is still running');
+  finish(); await h.settle();
+});
+
+test('progress and the end of a download write nothing once the screen is closed, and the subscription is released', async () => {
+  const { h, writes, finish } = stalledDownload();
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("a")'); await h.settle();
+  h.run('input("b")');
+  const before = writes.length;
+  h.emitProgress(77);
+  finish(); await h.settle();
+  assert.deepEqual(writes.slice(before), [], 'nothing written to the error line after leaving');
+  assert.equal(h.run('mode'), 'library', 'and the screen is not drawn again');
+  assert.equal(h.subscriptions.open, 0);
+  assert.equal(h.subscriptions.released, 1);
+});
+
+test('re-opening the screen mid-download cannot start a second download', async () => {
+  const { h, finish } = stalledDownload();
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("a")'); await h.settle();
+  h.run('input("b")');
+  await h.run('openAppUpdates()');
+  h.run('selected=2;input("a")'); await h.settle();
+  assert.deepEqual(h.calls.filter(call => call === 'install'), ['install'], 'still one download');
+  assert.match(h.byId['modal-error'].textContent, /already downloading/i);
+  h.emitProgress(60);
+  assert.equal(h.byId['modal-error'].textContent, 'Downloading… 60%', 'the re-opened screen shows the progress again');
+  finish(); await h.settle();
+  assert.equal(h.subscriptions.open, 0);
 });
