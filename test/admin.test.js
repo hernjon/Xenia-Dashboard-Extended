@@ -1051,6 +1051,18 @@ test('update now downloads first, installs only a finished download, and forward
   assert.deepEqual(h.updater.log.slice(1), [['downloaded', true], ['installNow']]);
   assert.equal(h.quit().prevented, false, 'the installer is allowed to close the app');
 });
+test('a slow dashboard download does not hold the settings queue: other settings change while it runs', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true });
+  h.updater.latest = '1.4.0'; await h.startup();
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  let finish; h.updater.gate = new Promise(resolve => { finish = resolve; });
+  const installing = h.invoke('updates:app-install');
+  await new Promise(resolve => setImmediate(resolve));
+  const changed = await Promise.race([h.invoke('updates:app-mode', 'xenia', 'auto').then(() => 'changed'), new Promise(resolve => setTimeout(() => resolve('waiting'), 50))]);
+  assert.equal(changed, 'changed', 'a setting changed while the download was still running');
+  finish(true); await installing;
+  assert.deepEqual(h.updater.log.slice(-2), [['downloaded', true], ['installNow']], 'and the install still happens once the download is done');
+});
 test('the first start after an upgrade shows "Dashboard updated to X" once, and never on a first install or with a garbage last_run_version', async () => {
   const upgraded = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0', library: { last_run_version: '1.3.0' } });
   await upgraded.startup();

@@ -112,7 +112,7 @@ Each view covers the same four screens: the library, Xenia Settings, a settings 
 Get the latest build from [**Releases**](../../releases/latest):
 
 - **Windows:** `Xenia-Dashboard-<version>-Setup.exe` (installer) or `-Portable.exe` (no install).
-- **Linux:** `Xenia-Dashboard-<version>.AppImage` — `chmod +x` it and run.
+- **Linux:** `Xenia-Dashboard.AppImage` — `chmod +x` it and run.
 
 **Portable:** the `-Portable.exe` saves everything (library, settings, covers, installed Xenia) in a `Xenia Dashboard Data` folder next to it, so you can carry it on a USB stick. It does not use or change `%APPDATA%`. For the AppImage, create a folder named `Xenia Dashboard Data` beside it to get the same behaviour. Game paths are stored as typed, so on a stick whose drive letter changes, set *Folders* again (or keep the games on the stick and use the same letter).
 
@@ -124,7 +124,7 @@ Builds are unsigned: Windows SmartScreen will warn once ("More info › Run anyw
 
 - **Notify only:** a notice tells you a new version is out. *Update to…* in the same screen installs it when you choose.
 - **Automatic:** a new dashboard is downloaded in the background and installed when you close the app (it does not reopen by itself; the next start says it was updated). Xenia is updated only when the dashboard installed it and it is the one in use; the previous build is kept, so *Go back to…* still works. A copy of Xenia you point to yourself is never replaced, and nothing updates while a game is running.
-- **By installation:** the Windows Setup and the Linux AppImage update themselves. The Portable `.exe` (and an AppImage in a folder it cannot write to) only get the notice and an *Open release page* row. A source install (`git clone`) has no dashboard row: use `git pull`. On Linux, an AppImage whose file name contains the version is replaced by the new version's file: the old file is removed and the name changes, so shortcuts to the old name stop working. Rename the AppImage to a name without a version (for example `Xenia-Dashboard.AppImage`) and updates overwrite it in place.
+- **By installation:** the Windows Setup and the Linux AppImage update themselves. The Portable `.exe` (and an AppImage in a folder it cannot write to) only get the notice and an *Open release page* row. A source install (`git clone`) has no dashboard row: use `git pull`. The AppImage has no version in its name, so an update replaces the file in place and shortcuts keep working (an AppImage you renamed with a version in the name is replaced by a new file with a new name).
 
 Nothing is installed unless you pick Automatic, or press *Update to…*. The installers are not code-signed, so what protects an update is that it comes from this project's GitHub releases and its checksum is verified before it runs.
 

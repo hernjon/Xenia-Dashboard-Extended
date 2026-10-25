@@ -73,7 +73,7 @@
         "AppImage"
       ],
       "category": "Game",
-      "artifactName": "Xenia-Dashboard-${version}.${ext}"
+      "artifactName": "Xenia-Dashboard.${ext}"
     },
     "electronFuses": {
       "runAsNode": false,

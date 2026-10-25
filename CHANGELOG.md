@@ -14,6 +14,8 @@ Updates for the dashboard and for Xenia.
 
 ### Minor changes
 - Installing a Xenia now blocks launching a game until it finishes.
+- The Linux AppImage is now just `Xenia-Dashboard.AppImage` (no version in the name), so updates replace it in place and shortcuts keep working.
+- Changing other settings no longer waits for an update download to finish.
 - A shipped build is not code-signed: updates are checked against the checksum of the GitHub release.
 - The first version with this menu is installed by hand once.
 

@@ -932,19 +932,22 @@ else {
     }));
     handle('updates:app-check',async()=>{requireAdmin('dashboard');const state=await checkAppUpdates();requireAdmin('dashboard');return state;});
     // "Update to…": download (progress on the row), then the installer closes the app, installs and opens it again.
-    handle('updates:app-install',()=>serialized(async()=>{
+    // The download can take a long time and is memoised, so it runs OUTSIDE the settings queue; only the install itself is serialized.
+    handle('updates:app-install',async()=>{
       requireAdmin('dashboard');
       if(gameRunning())throw Error('Close the running game first.');
       if(!updatePolicy.canSelfUpdate(await dashboardKind()))throw Error('This copy of the dashboard cannot update itself: open the release page instead.');
       if(!dashboardLatest)throw Error('No update to install. Check again first.');
       if(!await downloadDashboard())throw Error('Could not download the update.');
-      if(gameRunning())throw Error('Close the running game first.');
-      allowQuit=true;   // the installer closes the app
-      try{dashboardUpdater().installNow();}
-      catch(error){allowQuit=false;throw new Error(`Could not start the update: ${error?.message||error}`);}
-      // quitAndInstall can also fail without throwing: if the app is still running a while later, closing needs the PIN again.
-      setTimeout(()=>{allowQuit=false;},INSTALL_QUIT_GRACE).unref?.();
-    }));
+      return serialized(async()=>{
+        if(gameRunning())throw Error('Close the running game first.');
+        allowQuit=true;   // the installer closes the app
+        try{dashboardUpdater().installNow();}
+        catch(error){allowQuit=false;throw new Error(`Could not start the update: ${error?.message||error}`);}
+        // quitAndInstall can also fail without throwing: if the app is still running a while later, closing needs the PIN again.
+        setTimeout(()=>{allowQuit=false;},INSTALL_QUIT_GRACE).unref?.();
+      });
+    });
     // Xenia's "Update to…": only the latest build of the managed channel in use, the same install as Xenia Settings › Updates.
     handle('updates:xenia-install',()=>serialized(async()=>{
       requireAdmin('dashboard');
