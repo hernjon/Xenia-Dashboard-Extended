@@ -32,6 +32,7 @@ Every view shares the same core: the same sections, the same menus, the same con
 - **The real sounds.** Blade slides, focus, select, back and the notification chime, taken from the console's own dashboards, in the right places for each era.
 - **A first-run wizard.** On a new install the Install Wizard opens by itself: you pick a view on a timeline of the Xbox 360 dashboards, then set up Xenia, your game folders and the covers. Run it again any time from *Dashboard Settings › Install Wizard*.
 - **Portrait covers, properly.** Box art is shown upright and with its transparency, in a carousel, a grid or a list depending on the view.
+- **Updates, your way.** *Dashboard Settings › Updates* tells you when a new dashboard or a new Xenia is out, or installs it for you if you choose Automatic.
 
 ## First run
 
@@ -116,6 +117,16 @@ Get the latest build from [**Releases**](../../releases/latest):
 **Portable:** the `-Portable.exe` saves everything (library, settings, covers, installed Xenia) in a `Xenia Dashboard Data` folder next to it, so you can carry it on a USB stick. It does not use or change `%APPDATA%`. For the AppImage, create a folder named `Xenia Dashboard Data` beside it to get the same behaviour. Game paths are stored as typed, so on a stick whose drive letter changes, set *Folders* again (or keep the games on the stick and use the same letter).
 
 Builds are unsigned: Windows SmartScreen will warn once ("More info › Run anyway").
+
+### Updates
+
+*Dashboard Settings › Updates* has one mode for the dashboard and one for Xenia, each **Notify only** (the default) or **Automatic**. The app checks once when it starts and says nothing if you are offline.
+
+- **Notify only:** a notice tells you a new version is out. *Update to…* in the same screen installs it when you choose.
+- **Automatic:** a new dashboard is downloaded in the background and installed when you close the app (it does not reopen by itself; the next start says it was updated). Xenia is updated only when the dashboard installed it and it is the one in use; the previous build is kept, so *Go back to…* still works. A copy of Xenia you point to yourself is never replaced, and nothing updates while a game is running.
+- **By installation:** the Windows Setup and the Linux AppImage update themselves. The Portable `.exe` (and an AppImage in a folder it cannot write to) only get the notice and an *Open release page* row. A source install (`git clone`) has no dashboard row: use `git pull`.
+
+Nothing is installed unless you pick Automatic, or press *Update to…*. The installers are not code-signed, so what protects an update is that it comes from this project's GitHub releases and its checksum is verified before it runs.
 
 ## Controls and first setup
 

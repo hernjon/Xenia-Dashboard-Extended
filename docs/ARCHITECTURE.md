@@ -140,6 +140,20 @@ Start/chord shortcuts are gone.
 
 Anything selectable among options goes through `openChoice({ title, text, options, current, onPick })` in `ui/renderer.js`, which shows the centered window (`#guide-dialog`, drawn above every screen) and returns to the screen it was opened from. A / Enter opens it; ←/→ remain a quick step; B cancels. New settings should use it instead of cycling on A.
 
+## Updates
+
+*Dashboard Settings › Updates* (`ui/updates-ui.js`) keeps the dashboard and Xenia up to date. Three layers:
+
+- `src/update-policy.js`: plain functions, no Electron. Version comparison, mode normalisation (`'notify'` default, `'auto'`), `installKind` (`setup`, `appimage`, `appimage-locked`, `portable`, `source`), what to do with a newer version (`dashboardAction`, `xeniaAction`) and the "updated to…" notices from `last_run_version` and `last_run_xenia`.
+- `src/self-update.js`: a thin adapter around `electron-updater`, loaded lazily so a source install never loads it. Auto-download is off; a download is verified against the release's SHA-512 before anything runs.
+- `src/main.js` and the screen: `runStartupUpdateChecks` runs once, a few seconds after the window loads, and swallows every error. The `updates:*` handlers need the Dashboard admin session and take only fixed values (the renderer never sends a URL; the release page is a constant).
+
+Quit rule: with the dashboard on Automatic, the downloaded update installs when the user closes the app, and the app is not reopened. *Update to…* installs now and reopens. If the update cannot start, the app does not stay closable without the PIN.
+
+Xenia on Automatic only touches the managed copy in use (the status Xenia Settings › Updates already computes), and not while a game runs. While Xenia installs, `xeniaInstalling` makes `launch()` refuse ("Xenia is being updated"), so a game cannot start in the middle of a swap.
+
+Release pipeline (`.github/workflows/release.yml`): the tag must equal the `package.json` version; the release must carry `latest.yml`, `latest-linux.yml` and the Setup `.blockmap` (`build.publish` points at this repository); on Windows a guard fails the build if `latest.yml` does not list the Setup installer or lists the Portable one, so the Portable build is never offered to the updater.
+
 ## Install wizard and View picker
 
 Three small units, none of them a section:
