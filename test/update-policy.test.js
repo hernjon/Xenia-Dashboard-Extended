@@ -55,6 +55,9 @@ test('updatedNotice only fires for a real upgrade from a known version', () => {
   assert.equal(updatedNotice({ lastRun: undefined, current: '1.1.0' }), null);
   assert.equal(updatedNotice({ lastRun: '1.1.0', current: '1.1.0' }), null);
   assert.equal(updatedNotice({ lastRun: '1.2.0', current: '1.1.0' }), null);
+  for (const garbage of ['garbage', 'AUTO', '1.x', ' ', 42, {}, ['1.0.0'], true])
+    assert.equal(updatedNotice({ lastRun: garbage, current: '1.1.0' }), null, `nothing for ${JSON.stringify(garbage)}`);
+  assert.deepEqual(updatedNotice({ lastRun: 'v1.0.0', current: '1.1.0' }), { from: 'v1.0.0', to: '1.1.0' }, 'a v-prefixed version still counts');
 });
 
 test('xeniaAction never auto-installs an unmanaged copy or while a game runs', () => {
@@ -74,4 +77,10 @@ test('xeniaUpdatedNotice needs the same channel', () => {
   assert.equal(xeniaUpdatedNotice({ last: v('edge', 'v1'), now: v('edge', 'v1') }), null);
   assert.equal(xeniaUpdatedNotice({ last: null, now: v('edge', 'v2') }), null);
   assert.equal(xeniaUpdatedNotice({ last: v('edge', 'v1'), now: null }), null);
+  for (const bad of [42, {}, ['v1'], true, ''])
+    assert.equal(xeniaUpdatedNotice({ last: v('edge', bad), now: v('edge', 'v2') }), null, `no notice from tag ${JSON.stringify(bad)}`);
+  assert.equal(xeniaUpdatedNotice({ last: v('edge', 'v1'), now: v('edge', 42) }), null);
+  assert.equal(xeniaUpdatedNotice({ last: v('', 'v1'), now: v('', 'v2') }), null, 'a channel must be named');
+  assert.equal(xeniaUpdatedNotice({ last: v(7, 'v1'), now: v(7, 'v2') }), null);
+  assert.equal(xeniaUpdatedNotice({ last: 'edge', now: v('edge', 'v2') }), null);
 });

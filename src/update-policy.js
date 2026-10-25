@@ -1,8 +1,11 @@
 'use strict';
 // What the updater should do, decided from plain facts (no Electron, no I/O) so every rule can be tested on its own.
 
+const VERSION = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(-.+)?$/;
+const bare = v => String(v ?? '').trim().replace(/^v/i, '');
+const isVersion = v => typeof v === 'string' && VERSION.test(bare(v));
 const parts = v => {
-  const m = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?(-.+)?$/.exec(String(v ?? '').trim().replace(/^v/i, ''));
+  const m = VERSION.exec(bare(v));
   return m ? { n: [+m[1], +(m[2] || 0), +(m[3] || 0)], pre: !!m[4] } : { n: [0, 0, 0], pre: false };
 };
 // -1 | 0 | 1. Numeric per part ('1.10.0' > '1.9.0'); a '-suffix' is older than the bare version; unparsable = 0.0.0.
@@ -34,7 +37,7 @@ function dashboardAction({ kind, mode, current, latest }) {
 
 // "Updated to X" only after a real upgrade from a version we remember (a first run has nothing to compare).
 function updatedNotice({ lastRun, current }) {
-  return typeof lastRun === 'string' && lastRun && compareVersions(lastRun, current) < 0 ? { from: lastRun, to: current } : null;
+  return isVersion(lastRun) && compareVersions(lastRun, current) < 0 ? { from: lastRun, to: current } : null;
 }
 
 // found: what update-notice.findUpdate returns, or null. Only a copy the dashboard installed (managed) is replaced, and never mid-game.
@@ -44,8 +47,9 @@ function xeniaAction({ found, managed, mode, gameRunning }) {
 }
 
 // last/now: { channel, tag }. A channel switch is not an update.
+const named = value => typeof value === 'string' && value !== '';
 function xeniaUpdatedNotice({ last, now }) {
-  return last && now && last.channel === now.channel && last.tag && now.tag && last.tag !== now.tag
+  return named(last?.channel) && named(now?.channel) && last.channel === now.channel && named(last.tag) && named(now.tag) && last.tag !== now.tag
     ? { channel: now.channel, from: last.tag, to: now.tag } : null;
 }
 

@@ -270,14 +270,19 @@ async function checkXeniaUpdate() {
 }
 // Downloads, verifies and installs the latest build of one channel; the build it replaces is kept to go back to. `allowed` runs again
 // once the release is known, to re-check what let the caller start (a PIN session, no game running). Returns the release installed.
+// While it runs no game may start (launch() checks xeniaInstalling), so the build is never swapped under a running Xenia.
+let xeniaInstalling=false;
 async function installXenia(channel,allowed){
   requireIdle();const platform=updatesPlatform(channel);
-  const release=await xeniaReleases.latest(channel,platform,(url,limit)=>covers.request(url,(...args)=>net.fetch(...args),limit));
-  allowed();
-  await xeniaReleases.downloadAndInstall(installsRoot(),channel,platform,release,{fetcher:xeniaReleases.httpsFetcher,onProgress:progress=>{if(win&&!win.isDestroyed())win.webContents.send('updates:progress',progress);}});
-  // Nothing configured yet (a first run): use what was just installed. Otherwise the user decides.
-  if(!library.xenia_executable)await useInstalled(channel,platform);
-  return release;
+  xeniaInstalling=true;
+  try{
+    const release=await xeniaReleases.latest(channel,platform,(url,limit)=>covers.request(url,(...args)=>net.fetch(...args),limit));
+    allowed();
+    await xeniaReleases.downloadAndInstall(installsRoot(),channel,platform,release,{fetcher:xeniaReleases.httpsFetcher,onProgress:progress=>{if(win&&!win.isDestroyed())win.webContents.send('updates:progress',progress);}});
+    // Nothing configured yet (a first run): use what was just installed. Otherwise the user decides.
+    if(!library.xenia_executable)await useInstalled(channel,platform);
+    return release;
+  }finally{xeniaInstalling=false;}
 }
 // ---- Updates (Dashboard Settings › Updates): the dashboard's own and Xenia's, each 'notify' (the default) or 'auto'. Checked once
 // per start, a few seconds after the window loaded; offline or GitHub failing says nothing. Only 'auto' installs anything by itself.
@@ -306,19 +311,23 @@ async function appUpdateState(){
     xenia:xeniaUpdate&&{channel:xeniaUpdate.channel,label:xeniaUpdate.label,installed:xeniaUpdate.installed,latest:xeniaUpdate.latest,managed:xeniaUpdate.managed}};
 }
 const xeniaUpdatedNotice=(channel,label,tag)=>({id:`xenia-updated:${channel}:${tag}`,title:'Xenia updated',text:`${label} updated to ${tag}`});
-// What ran this time, so the next start can tell that an update happened.
-const rememberRun=xenia=>serialized(async()=>{
-  const next={...library,last_run_version:app.getVersion()};if(xenia)next.last_run_xenia=xenia;else delete next.last_run_xenia;
+// What ran, so the next start can tell that an update happened. Not serialized: callers already are, or wrap it.
+async function saveRun(fields){
+  const next={...library,...fields};if(!next.last_run_xenia)delete next.last_run_xenia;
   await scanner.saveLibrary(libraryFile,next);library=next;
-});
-// The first start after an update says so, once.
+}
+const xeniaRunning=status=>{const used=managedXenia(status);return used?{channel:used.id,tag:used.installed.tag}:null;};
+// After the user's own change of the Xenia in use (install, Use it, Go back to…, own copy): remembered, so it is not announced as an update.
+const rememberXenia=async()=>saveRun({last_run_xenia:xeniaRunning(await updatesStatus())});
+// The first start after an update says so, once. An unreadable Xenia status keeps what was remembered and announces nothing for Xenia.
 async function announceUpdates(){
   const dashboard=updatePolicy.updatedNotice({lastRun:library.last_run_version,current:app.getVersion()});
   if(dashboard)pushNotice({id:`dashboard-updated:${dashboard.to}`,title:'Dashboard updated',text:`Dashboard updated to ${dashboard.to}`});
-  const used=managedXenia(await updatesStatus()),now=used&&{channel:used.id,tag:used.installed.tag};
-  const xenia=updatePolicy.xeniaUpdatedNotice({last:library.last_run_xenia,now});
-  if(xenia)pushNotice(xeniaUpdatedNotice(xenia.channel,used.label,xenia.to));
-  await rememberRun(now);
+  let status=null;try{status=await updatesStatus();}catch(error){console.warn('[Xenia Dashboard] Update notice:',error.message);}
+  const now=status?xeniaRunning(status):library.last_run_xenia,label=status&&managedXenia(status)?.label;
+  const xenia=status&&updatePolicy.xeniaUpdatedNotice({last:library.last_run_xenia,now});
+  if(xenia)pushNotice(xeniaUpdatedNotice(xenia.channel,label,xenia.to));
+  await serialized(()=>saveRun({last_run_version:app.getVersion(),last_run_xenia:now}));
 }
 // `act` (only at start) puts up the notices and does what Automatic allows; a check from the menu only refreshes the state.
 async function checkDashboardUpdate(act){
@@ -341,11 +350,15 @@ async function checkXenia(act){
   if(action==='notify')pushNotice(updateNotice.noticeFor(xenia.found));
   if(action!=='auto-install')return;
   try{
-    const release=await serialized(async()=>managedXenia(await updatesStatus())?.id===xenia.channel?installXenia(xenia.channel,requireIdle):null);
-    if(!release)return;   // the user switched to another Xenia meanwhile
+    const release=await serialized(async()=>{
+      if(managedXenia(await updatesStatus())?.id!==xenia.channel)return null;   // the user switched to another Xenia meanwhile
+      const installed=await installXenia(xenia.channel,requireIdle);
+      await saveRun({last_run_xenia:{channel:xenia.channel,tag:installed.tag}});   // announced now, so not again next start
+      return installed;
+    });
+    if(!release)return;
     xeniaUpdate={...xenia,installed:release.tag,latest:null};
     pushNotice(xeniaUpdatedNotice(xenia.channel,xenia.label,release.tag));
-    await rememberRun({channel:xenia.channel,tag:release.tag});
   }catch(error){
     console.warn('[Xenia Dashboard] Xenia update:',error.message);
     if(gameRunning())pushNotice(updateNotice.noticeFor(xenia.found));   // a game started meanwhile: tell the user instead
@@ -373,14 +386,17 @@ function handle(channel, fn) {
     return fn(...args);
   });
 }
+const refuseWhileInstalling=()=>{if(xeniaInstalling)throw new Error('Xenia is being updated. Try again in a moment.');};
 async function launch(id) {
   if (child||launchPending) throw new Error('A game is already running');
+  refuseWhileInstalling();
   const game = library.games.find(g => g.id === id);
   if (!game) throw new Error('Unknown game');
   if (game.kind === 'native') return launchNative(game);
   await fs.access(game.rom_path); await fs.access(library.xenia_executable);
   // Re-check after asynchronous validation to prevent concurrent launches.
   if (child||launchPending) throw new Error('A game is already running');
+  refuseWhileInstalling();
   launchPending=true;
   adminSessions.clear();
   // Native Linux builds (e.g. Xenia Edge AppImage) run directly; only Windows .exe files need Wine/Proton.
@@ -425,6 +441,7 @@ async function launchNative(game) {
   }
   if(run.prefix)await fs.mkdir(run.prefix,{recursive:true});
   if(child||launchPending)throw new Error('A game is already running');
+  refuseWhileInstalling();
   launchPending=true;
   adminSessions.clear();
   const handoff=prepareHandoff(win,{platform:process.platform});
@@ -745,8 +762,8 @@ else {
       try{current_tag=await xeniaReleases.identify(library.xenia_executable,channel,platform,request,release);}catch{/* an unreadable file just stays unidentified */}
       requireAdmin('xenia');return {...release,current_tag};
     });
-    handle('xenia:updates-install',channel=>serialized(async()=>{requireAdmin('xenia');await installXenia(channel,()=>requireAdmin('xenia'));return updatesStatus();}));
-    handle('xenia:updates-use',channel=>serialized(async()=>{requireAdmin('xenia');requireIdle();await useInstalled(channel,updatesPlatform(channel));return updatesStatus();}));
+    handle('xenia:updates-install',channel=>serialized(async()=>{requireAdmin('xenia');await installXenia(channel,()=>requireAdmin('xenia'));await rememberXenia();return updatesStatus();}));
+    handle('xenia:updates-use',channel=>serialized(async()=>{requireAdmin('xenia');requireIdle();await useInstalled(channel,updatesPlatform(channel));await rememberXenia();return updatesStatus();}));
     // "Install folder" row: pick where the downloaded Xenia lives (or go back to the default). Existing builds move along.
     handle('xenia:updates-folder',action=>serialized(async()=>{
       requireAdmin('xenia');requireIdle();
@@ -775,7 +792,7 @@ else {
       }finally{pickerOpen=false;}
       if(chosen){
         if(!path.isAbsolute(chosen)||chosen.length>4096||chosen.includes('\0'))throw Error('Invalid Xenia path');
-        await fs.access(chosen);const next={...library,xenia_executable:chosen};await scanner.saveLibrary(libraryFile,next);library=next;
+        await fs.access(chosen);const next={...library,xenia_executable:chosen};await scanner.saveLibrary(libraryFile,next);library=next;await rememberXenia();
       }
       return updatesStatus();
     }));
@@ -801,7 +818,7 @@ else {
       return foldersView();
     }));
     handle('xenia:updates-rollback',channel=>serialized(async()=>{
-      requireAdmin('xenia');requireIdle();await xeniaReleases.rollback(installsRoot(),channel,updatesPlatform(channel));return updatesStatus();
+      requireAdmin('xenia');requireIdle();await xeniaReleases.rollback(installsRoot(),channel,updatesPlatform(channel));await rememberXenia();return updatesStatus();
     }));
     // Community-optimized settings for one game (Game menu › Optimized settings). The check is read-only; apply
     // re-downloads and re-plans in this process rather than trusting what the screen showed.
@@ -921,7 +938,9 @@ else {
       if(!dashboardLatest)throw Error('No update to install. Check again first.');
       if(!await downloadDashboard())throw Error('Could not download the update.');
       if(gameRunning())throw Error('Close the running game first.');
-      allowQuit=true;dashboardUpdater().installNow();
+      allowQuit=true;   // the installer closes the app
+      try{dashboardUpdater().installNow();}
+      catch(error){allowQuit=false;throw new Error(`Could not start the update: ${error?.message||error}`);}
     }));
     // Xenia's "Update to…": only the latest build of the managed channel in use, the same install as Xenia Settings › Updates.
     handle('updates:xenia-install',()=>serialized(async()=>{
@@ -929,6 +948,7 @@ else {
       const used=managedXenia(await updatesStatus());
       if(!used)throw Error('Only a Xenia installed by the dashboard and in use can be updated here.');
       const release=await installXenia(used.id,()=>requireAdmin('dashboard'));
+      await rememberXenia();
       xeniaUpdate={channel:used.id,label:used.label,installed:release.tag,latest:null,managed:true};
       return appUpdateState();
     }));

@@ -12,11 +12,12 @@ async function mainHarness(withTheme=false,coverMode='none',gameExtra={},options
   const handlers = new Map(), calls = [], events = new Map(), windowEvents = new Map(), windowCalls = [], routes = new Map(), spawnCalls = [], accessCalls = [], chmodCalls = [], mkdirCalls = [], scans = { count: 0 };
   const appEvents = [], timers = [], saved = [], opened = [], loaded = [];
   // The dashboard's own updater, faked: what main.js asks of it is recorded; the test sets what it answers.
-  const updater = { created: 0, checks: 0, downloads: 0, latest: null, checkThrows: false, downloadResult: true, gate: null, progress: [50], log: [] };
+  const saveControl = { fail: false };
+  const updater = { created: 0, checks: 0, downloads: 0, latest: null, checkThrows: false, installNowThrows: false, downloadResult: true, gate: null, progress: [50], log: [] };
   const selfUpdate = { createSelfUpdater: () => { updater.created++; let downloaded = false; return {
     async check() { updater.checks++; if (updater.checkThrows) throw new Error('offline'); return updater.latest ? { version: updater.latest } : null; },
     async download(onProgress) { updater.downloads++; for (const value of updater.progress) onProgress(value); downloaded = await (updater.gate || updater.downloadResult); updater.log.push(['downloaded', downloaded]); return downloaded; },
-    installNow() { updater.log.push(['installNow']); },
+    installNow() { updater.log.push(['installNow']); if (updater.installNowThrows) throw new Error('installer missing'); },
     installOnQuit(enabled) { updater.log.push(['installOnQuit', enabled, downloaded]); }
   }; } };
   const emulator = new EventEmitter();
@@ -43,7 +44,7 @@ async function mainHarness(withTheme=false,coverMode='none',gameExtra={},options
     }
   };
   const context = vm.createContext({
-    require: name => name === './self-update' ? selfUpdate : name === './xenia-releases' ? { ...require('../src/xenia-releases'), httpsFetcher: (url, init) => routes.has(url) ? Promise.resolve(routes.get(url)(url, init)) : Promise.reject(new Error(`unrouted ${url}`)) } : name === 'electron' ? electron : name === 'node:child_process' ? { spawn: (...args) => { spawnCalls.push(args); return emulator; } } : name === 'node:fs/promises' ? { access: async file => { accessCalls.push(file); if(file===''||options.missingPaths?.includes(file))throw Object.assign(Error('ENOENT'),{code:'ENOENT'}); },mkdir:async(...args)=>{mkdirCalls.push(args);},writeFile:async()=>{},rename:async()=>{},unlink:async()=>{},readdir:(...args)=>require('node:fs/promises').readdir(...args),stat:(...args)=>require('node:fs/promises').stat(...args),chmod:async(...args)=>{chmodCalls.push(args);if(options.chmodFails)throw Object.assign(Error(`EPERM: operation not permitted, chmod '${args[0]}'`),{code:'EPERM'});} } : name==='./nxe'?{...require('../src/nxe'),loadTheme:async()=>({directory:__dirname,manifest:{version:1,assets:{},backgrounds:[{id:'theme-test',label:'Test'}],inventory:[],sounds:{},notes:[]},selected:'theme-test',audio:{volume:.5,muted:options.legacyMuted===true}})}:name === './scanner' ? { ...scanner, loadLibrary: async () => ({ rom_directory: options.romDirectory ?? '', rom_directories: options.romDirectory ? [options.romDirectory] : [], xenia_executable: options.executable ?? 'C:\\Xenia\\xenia.exe', games: [game], admin_credential: scanner.hashPin('1234'), ...(options.library || {}) }), scanDirectory: async () => [game], scanDirectories: async () => { scans.count++; return [game]; }, saveLibrary: async (_file, next) => { saved.push(next); } } : require(name.startsWith('./') ? '../src/' + name.slice(2) : name),
+    require: name => name === './self-update' ? selfUpdate : name === './xenia-releases' ? { ...require('../src/xenia-releases'), httpsFetcher: (url, init) => routes.has(url) ? Promise.resolve(routes.get(url)(url, init)) : Promise.reject(new Error(`unrouted ${url}`)) } : name === 'electron' ? electron : name === 'node:child_process' ? { spawn: (...args) => { spawnCalls.push(args); return emulator; } } : name === 'node:fs/promises' ? { access: async file => { accessCalls.push(file); if(file===''||options.missingPaths?.includes(file))throw Object.assign(Error('ENOENT'),{code:'ENOENT'}); },mkdir:async(...args)=>{mkdirCalls.push(args);},writeFile:async()=>{},rename:async()=>{},unlink:async()=>{},readdir:(...args)=>require('node:fs/promises').readdir(...args),stat:(...args)=>require('node:fs/promises').stat(...args),chmod:async(...args)=>{chmodCalls.push(args);if(options.chmodFails)throw Object.assign(Error(`EPERM: operation not permitted, chmod '${args[0]}'`),{code:'EPERM'});} } : name==='./nxe'?{...require('../src/nxe'),loadTheme:async()=>({directory:__dirname,manifest:{version:1,assets:{},backgrounds:[{id:'theme-test',label:'Test'}],inventory:[],sounds:{},notes:[]},selected:'theme-test',audio:{volume:.5,muted:options.legacyMuted===true}})}:name === './scanner' ? { ...scanner, loadLibrary: async () => ({ rom_directory: options.romDirectory ?? '', rom_directories: options.romDirectory ? [options.romDirectory] : [], xenia_executable: options.executable ?? 'C:\\Xenia\\xenia.exe', games: [game], admin_credential: scanner.hashPin('1234'), ...(options.library || {}) }), scanDirectory: async () => [game], scanDirectories: async () => { scans.count++; return [game]; }, saveLibrary: async (_file, next) => { if (saveControl.fail) throw new Error('disk full'); saved.push(next); } } : require(name.startsWith('./') ? '../src/' + name.slice(2) : name),
     __dirname: path.join(__dirname, '..', 'src'), console: { info() {}, warn() {}, error() {} }, process: { platform: options.platform || 'win32', env: options.env || {}, on() {} }, Date: { now: () => now }, URL, Response,
     setTimeout: (fn, ms) => { const timer = { fn, ms, unref() { timer.unrefed = true; return timer; } }; timers.push(timer); return timer; }
   });
@@ -53,7 +54,7 @@ async function mainHarness(withTheme=false,coverMode='none',gameExtra={},options
   for (let attempts = 0; !window && attempts < 1000; attempts++) await new Promise(resolve => setTimeout(resolve, 5));
   assert.ok(window, 'main.js never created the window');
   const caller = () => ({ sender: window.webContents, senderFrame: window.webContents.mainFrame });
-  return { calls, events, windowEvents, routes, emulator, windowCalls,spawnCalls,accessCalls,chmodCalls,mkdirCalls,scans,updater,timers,saved,opened,loaded,
+  return { calls, events, windowEvents, routes, emulator, windowCalls,spawnCalls,accessCalls,chmodCalls,mkdirCalls,scans,updater,timers,saved,opened,loaded,saveControl,
     // What the real start does a few seconds after the window loaded: run the timers it set (the update checks).
     startup: async () => { for (const timer of timers.splice(0)) await timer.fn(); },
     quit: () => { let prevented = false; for (const [name, fn] of appEvents) if (name === 'before-quit') fn({ preventDefault() { prevented = true; } }); return { prevented }; },hasHandler:name=>handlers.has(name), invoke: (name, ...args) => handlers.get(name)(caller(), ...args), untrusted: (name, ...args) => handlers.get(name)({ sender: {}, senderFrame: {} }, ...args), setTime: value => { now = value; }, setResult: value => { dialogResult = value; } };
@@ -1069,6 +1070,19 @@ test('the first start after an upgrade shows "Dashboard updated to X" once, and 
     assert.equal(h.saved.at(-1).last_run_version, '1.4.0');
   }
 });
+test('garbage in the remembered runs never fakes an update notice, with a managed Xenia in use too', async t => {
+  const { h, userData } = await updatesHarness(t, { executable: '', packaged: true });
+  pretendGithub(h, 'aaa1111', ELF);
+  await h.invoke('admin:unlock', '1234', 'xenia'); await h.invoke('xenia:updates-install', 'edge');
+  const executable = (await h.invoke('xenia:updates-status')).configured;
+  for (const last_run_xenia of [{ channel: 'edge', tag: 42 }, { channel: 'edge', tag: {} }, { channel: 7, tag: 'zzz9999' }, 'edge', 42])
+    for (const last_run_version of ['garbage', 'AUTO', 1.2]) {
+      const next = await mainHarness(false, 'none', {}, { userData, platform: 'linux', packaged: true, executable, version: '1.4.0', library: { last_run_version, last_run_xenia } });
+      await next.startup();
+      assert.deepEqual(await takeNotices(next), [], `no notice for ${JSON.stringify({ last_run_version, last_run_xenia })}`);
+      assert.deepEqual({ ...next.saved.at(-1).last_run_xenia }, { channel: 'edge', tag: 'aaa1111' }, 'the real state is remembered instead');
+    }
+});
 test('Xenia automatic updates only a managed copy in use and skips while a game runs, showing the notify notice instead', async t => {
   const NEWER = Buffer.concat([ELF, Buffer.from('newer')]);
   const managed = async () => {
@@ -1156,4 +1170,91 @@ test('an AppImage in a folder it cannot write to only opens the release page', a
   locked.updater.latest = '1.4.0'; await locked.startup();
   assert.deepEqual(await takeNotices(locked), ['Dashboard 1.4.0 available · Dashboard Settings › Updates']);
   assert.equal(locked.updater.downloads, 0);
+});
+
+// Review round 1
+test('an automatic Xenia install blocks game launches until it is done, and still completes', async t => {
+  const { h } = await updatesHarness(t, { executable: '', packaged: true, library: { update_mode_xenia: 'auto' } });
+  pretendGithub(h, 'aaa1111', ELF);
+  await h.invoke('admin:unlock', '1234', 'xenia'); await h.invoke('xenia:updates-install', 'edge'); await h.invoke('admin:lock');
+  const NEWER = Buffer.concat([ELF, Buffer.from('newer')]);
+  pretendGithub(h, 'bbb2222', NEWER);
+  let release, asked = false; const gate = new Promise(resolve => { release = resolve; });
+  h.routes.set('https://release-assets.githubusercontent.com/blob/bbb2222', () => { asked = true; return gate.then(() => new Response(NEWER)); });
+  const started = h.startup();
+  for (let i = 0; i < 500 && !asked; i++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.ok(asked, 'the download is under way');
+  await assert.rejects(h.invoke('game:launch', 'test-game'), /^Error: Xenia is being updated\. Try again in a moment\.$/);
+  assert.equal(h.spawnCalls.length, 0, 'no game was started');
+  release(); await started;
+  assert.deepEqual(await takeNotices(h), ['Xenia Edge updated to bbb2222'], 'the install finished');
+  await h.invoke('game:launch', 'test-game');
+  assert.equal(h.spawnCalls.length, 1, 'games launch again afterwards');
+});
+test('a game already running makes the automatic Xenia path skip: nothing is downloaded or installed', async t => {
+  const { h } = await updatesHarness(t, { executable: '', packaged: true, library: { update_mode_xenia: 'auto' } });
+  pretendGithub(h, 'aaa1111', ELF);
+  await h.invoke('admin:unlock', '1234', 'xenia'); await h.invoke('xenia:updates-install', 'edge'); await h.invoke('admin:lock');
+  pretendGithub(h, 'bbb2222', ELF);
+  let downloaded = false;
+  h.routes.set('https://release-assets.githubusercontent.com/blob/bbb2222', () => { downloaded = true; return new Response(ELF); });
+  await h.invoke('game:launch', 'test-game');
+  await h.startup();
+  assert.equal(downloaded, false);
+  assert.deepEqual(await takeNotices(h), ['Xenia Edge bbb2222 is ready · Xenia Settings › Updates'], 'only the Notify-only notice, as before');
+});
+test('the user\'s own Xenia changes are never announced as updates on the next start; an automatic one is announced once', async t => {
+  const { h, userData } = await updatesHarness(t, { executable: '', packaged: true });
+  const nextStart = async (from, extra = {}) => {
+    const configured = (await from.invoke('xenia:updates-status')).configured;
+    const next = await mainHarness(false, 'none', {}, { userData, platform: 'linux', packaged: true, executable: configured, library: { last_run_version: '1.3.0', last_run_xenia: from.saved.at(-1).last_run_xenia, ...extra } });
+    await next.startup(); return next;
+  };
+  await h.invoke('admin:unlock', '1234', 'xenia');
+  pretendGithub(h, 'aaa1111', ELF); await h.invoke('xenia:updates-install', 'edge');
+  await h.startup();   // this start remembers aaa1111 as the build that ran
+  assert.deepEqual({ ...h.saved.at(-1).last_run_xenia }, { channel: 'edge', tag: 'aaa1111' });
+  await h.invoke('admin:unlock', '1234', 'xenia');
+  pretendGithub(h, 'bbb2222', Buffer.concat([ELF, Buffer.from('2')])); await h.invoke('xenia:updates-install', 'edge');
+  let next = await nextStart(h);
+  assert.deepEqual(await takeNotices(next), [], 'an install from Xenia Settings is not announced');
+  await h.invoke('xenia:updates-rollback', 'edge');
+  next = await nextStart(h);
+  assert.deepEqual(await takeNotices(next), [], 'Go back to… is not announced');
+  await h.invoke('xenia:updates-use', 'edge');
+  next = await nextStart(h);
+  assert.deepEqual(await takeNotices(next), [], 'Use it is not announced');
+  pretendGithub(h, 'ccc3333', Buffer.concat([ELF, Buffer.from('3')]));
+  await h.invoke('admin:unlock', '1234', 'dashboard'); await h.invoke('updates:xenia-install');
+  next = await nextStart(h);
+  assert.deepEqual(await takeNotices(next), [], 'the Update row of the Updates menu is not announced');
+  // Automatic: announced once, at the start that installed it, and not again on the start after.
+  pretendGithub(next, 'ddd4444', Buffer.concat([ELF, Buffer.from('4')]));
+  const auto = await mainHarness(false, 'none', {}, { userData, platform: 'linux', packaged: true, executable: (await h.invoke('xenia:updates-status')).configured, library: { last_run_version: '1.3.0', last_run_xenia: h.saved.at(-1).last_run_xenia, update_mode_xenia: 'auto' } });
+  pretendGithub(auto, 'ddd4444', Buffer.concat([ELF, Buffer.from('4')]));
+  await auto.startup();
+  assert.deepEqual(await takeNotices(auto), ['Xenia Edge updated to ddd4444']);
+  await auto.invoke('admin:unlock', '1234', 'xenia');
+  next = await nextStart(auto);
+  assert.deepEqual(await takeNotices(next), [], 'shown once');
+});
+test('if the installer cannot start, the app does not stay closable without the PIN', async () => {
+  const h = await mainHarness(false, 'none', {}, { packaged: true });
+  h.updater.latest = '1.4.0'; await h.startup();
+  await h.invoke('admin:unlock', '1234', 'dashboard');
+  h.updater.installNowThrows = true;
+  await assert.rejects(h.invoke('updates:app-install'), /Could not start the update: installer missing/);
+  assert.equal(h.quit().prevented, true, 'quitting is guarded again');
+});
+test('a failure in one phase of the start check never stops the other or reaches the user', async () => {
+  const saving = await mainHarness(false, 'none', {}, { packaged: true, version: '1.4.0', library: { last_run_version: '1.3.0' } });
+  saving.updater.latest = '1.5.0'; saving.saveControl.fail = true;
+  await saving.startup();
+  assert.deepEqual(await takeNotices(saving), ['Dashboard updated to 1.4.0', 'Dashboard 1.5.0 available · Dashboard Settings › Updates'], 'a failed save does not stop the check');
+  // The Xenia install folder cannot be read (a file, not a folder): reading the Xenia status throws in both phases.
+  const status = await mainHarness(false, 'none', {}, { packaged: true, platform: 'linux', library: { xenia_install_dir: __filename } });
+  status.updater.latest = '1.4.0';
+  await status.startup();
+  assert.deepEqual(await takeNotices(status), ['Dashboard 1.4.0 available · Dashboard Settings › Updates']);
+  assert.equal(status.saved.at(-1).last_run_version, '1.3.0', 'the version that ran is still remembered');
 });
