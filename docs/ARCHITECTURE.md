@@ -152,7 +152,7 @@ Quit rule: with the dashboard on Automatic, the downloaded update installs when 
 
 Xenia on Automatic only touches the managed copy in use (the status Xenia Settings › Updates already computes), and not while a game runs. While Xenia installs, `xeniaInstalling` makes `launch()` refuse ("Xenia is being updated"), so a game cannot start in the middle of a swap.
 
-Release pipeline (`.github/workflows/release.yml`): the tag must equal the `package.json` version; the release must carry `latest.yml`, `latest-linux.yml` and the Setup `.blockmap` (`build.publish` points at this repository); on Windows a guard fails the build if `latest.yml` does not list the Setup installer or lists the Portable one, so the Portable build is never offered to the updater.
+Release pipeline (`.github/workflows/release.yml`): it checks that the tag equals the `package.json` version, and uploads the `latest*.yml` and `*.blockmap` files the build produced together with the installers (`build.publish` points at this repository). The only updater file it enforces is the Windows `latest.yml`: a guard fails the build if it does not list the Setup installer or lists the Portable one, so the Portable build is never offered to the updater.
 
 ## Install wizard and View picker
 

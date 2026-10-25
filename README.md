@@ -120,11 +120,11 @@ Builds are unsigned: Windows SmartScreen will warn once ("More info › Run anyw
 
 ### Updates
 
-*Dashboard Settings › Updates* has one mode for the dashboard and one for Xenia, each **Notify only** (the default) or **Automatic**. The app checks once when it starts and says nothing if you are offline.
+*Dashboard Settings › Updates* has one mode for the dashboard and one for Xenia, each **Notify only** (the default) or **Automatic**. The app checks when it starts (saying nothing if you are offline) and again whenever you press the *Up to date* row.
 
 - **Notify only:** a notice tells you a new version is out. *Update to…* in the same screen installs it when you choose.
 - **Automatic:** a new dashboard is downloaded in the background and installed when you close the app (it does not reopen by itself; the next start says it was updated). Xenia is updated only when the dashboard installed it and it is the one in use; the previous build is kept, so *Go back to…* still works. A copy of Xenia you point to yourself is never replaced, and nothing updates while a game is running.
-- **By installation:** the Windows Setup and the Linux AppImage update themselves. The Portable `.exe` (and an AppImage in a folder it cannot write to) only get the notice and an *Open release page* row. A source install (`git clone`) has no dashboard row: use `git pull`.
+- **By installation:** the Windows Setup and the Linux AppImage update themselves. The Portable `.exe` (and an AppImage in a folder it cannot write to) only get the notice and an *Open release page* row. A source install (`git clone`) has no dashboard row: use `git pull`. On Linux, an AppImage whose file name contains the version is replaced by the new version's file: the old file is removed and the name changes, so shortcuts to the old name stop working. Rename the AppImage to a name without a version (for example `Xenia-Dashboard.AppImage`) and updates overwrite it in place.
 
 Nothing is installed unless you pick Automatic, or press *Update to…*. The installers are not code-signed, so what protects an update is that it comes from this project's GitHub releases and its checksum is verified before it runs.
 
